@@ -367,6 +367,16 @@ class ExplorationMission:
                 else None
             ),
             "battery_mv": telemetry.battery_mv if telemetry is not None else None,
+            "sensors": (
+                {
+                    "range_cm": telemetry.range_cm,
+                    "has_echo": telemetry.has_echo,
+                    "color_id": telemetry.color_id,
+                    "bumper_pressed": telemetry.bumper_pressed,
+                }
+                if telemetry is not None
+                else None
+            ),
             "target": (
                 {"x_mm": target[0], "y_mm": target[1]} if target is not None else None
             ),

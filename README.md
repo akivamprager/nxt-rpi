@@ -131,6 +131,25 @@ scene.html says so directly in its own on-page note. A real robot never gets
 this view; it only ever knows what `mapping.py`'s occupancy grid has
 actually observed, which is what the 2D map at `/` honestly shows instead.
 
+The room is furnished (sofa, coffee table, rug, bookshelf, floor lamp) and
+textured (wood-plank floor, painted walls with baseboards and windows) —
+placed relative to the room's bounding box rather than hardcoded, so it
+adapts to whatever room a config defines. Furniture is cosmetic set
+dressing only; it is not part of collision or mapping, same caveat as the
+walls. The robot model itself got a pass of physical detail too: LEGO studs
+across the body's top face, a Technic-style "+" cross on each wheel hub, and
+a cable loop from the sensor bracket down to the turntable.
+
+**A picture-in-picture "ROBOT POV" panel** renders the same scene from the
+robot's own camera object — a second, independent WebGL context, not a fake
+view, so what it shows is genuinely what the robot's camera would see given
+its actual live pose. A green ray from the ultrasonic sensor shows its
+current reading live: full length to the echo distance if something was
+detected, a short dim stub if not — matching `US_NO_ECHO`'s "no
+information," not "clear" semantics from the wire protocol. Both draw from
+`mission.snapshot()`'s new `sensors` field (`range_cm`, `has_echo`,
+`color_id`, `bumper_pressed`), which wasn't exposed anywhere before this.
+
 ## Try it without hardware
 
 The whole Pi stack runs against a simulated brick.
