@@ -11,3 +11,7 @@ nxt-firmware/build/
 # markers are reproducible from the generator.
 pi/calibration/*.npz
 markers/*.png
+
+# Scratch copy of a reference video/frames used to design scene.html's
+# robot model — not project content. Safe to delete; ignored either way.
+.tmp_video/

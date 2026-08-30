@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scout — 3D scene</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: #12151a;
+    color: #e6e6e6;
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #layout { display: flex; height: 100vh; }
+  #scenePane { flex: 1; position: relative; background: #05070a; }
+  #scenePane canvas { display: block; }
+  #sidebar { width: 320px; padding: 16px; overflow-y: auto; box-sizing: border-box; border-left: 1px solid #2a2e35; }
+  #nav { margin-bottom: 12px; }
+  #nav a { color: #8a8f98; text-decoration: none; font-size: 12px; }
+  #nav a.active { color: #9fd0ff; }
+  #nav span { color: #444; margin: 0 6px; }
+  h1 { font-size: 15px; margin: 0 0 12px; letter-spacing: 0.02em; color: #9fd0ff; }
+  .row { display: flex; justify-content: space-between; margin: 4px 0; }
+  .label { color: #8a8f98; }
+  .value { font-variant-numeric: tabular-nums; }
+  #state {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    background: #2a2e35; font-weight: 600;
+  }
+  #state.DONE { background: #1e4620; color: #8fe08f; }
+  #state.RECOVERING { background: #4a2020; color: #ff9d9d; }
+  hr { border: none; border-top: 1px solid #2a2e35; margin: 12px 0; }
+  #offline { display: none; color: #ff9d9d; margin-top: 8px; }
+  #hint {
+    position: absolute; bottom: 10px; left: 14px; color: #6a7078;
+    font-size: 11px; pointer-events: none;
+  }
+  #note {
+    position: absolute; top: 10px; left: 14px; right: 14px; color: #6a7078;
+    font-size: 11px; pointer-events: none; max-width: 480px;
+  }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="scenePane">
+    <div id="note">Room walls shown here are ground truth from the simulator — a real
+      robot has no such view, only what it has actually mapped (see the 2D map).</div>
+    <div id="hint">drag to orbit · scroll to zoom · right-drag to pan</div>
+  </div>
+  <div id="sidebar">
+    <div id="nav"><a href="/">2D map</a><span>·</span><a class="active" href="/scene.html">3D scene</a></div>
+    <h1>SCOUT — 3D SCENE</h1>
+    <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
+    <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
+    <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
+    <div class="row"><span class="label">turret</span><span id="turret" class="value">—</span></div>
+    <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
+    <hr>
+    <div class="row"><span class="label">frames rx</span><span id="frames" class="value">—</span></div>
+    <div class="row"><span class="label">checksum errs</span><span id="checksum" class="value">—</span></div>
+    <div id="offline">no response from the dashboard server</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+// Three.js via CDN — this demo tool's one departure from the project's
+// "no internet dependency" rule for the real on-robot dashboard (Phase 5).
+// Fine for a dev-machine visualization aid; not meant for the production
+// IoT dashboard described in the plan.
+//
+// The import map above is required, not decorative: OrbitControls.js
+// internally does `import * as THREE from "three"` (a bare specifier), and
+// browsers can't resolve that without an explicit mapping — confirmed by
+// the actual "Failed to resolve module specifier three" error this threw
+// before the import map was added.
+import * as THREE from "three";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+// ---------------------------------------------------------------- constants
+//
+// 1 scene unit = 1 metre = 1000mm, so real millimetre measurements convert
+// with a plain /1000.
+const MM = 1 / 1000;
+
+// Robot cosmetics not present in config.yaml (wheel_diameter_mm and
+// track_width_mm ARE pulled from real telemetry/config below — these are
+// everything else: body/turret/sensor proportions). Approximate, styled
+// after this project's own reference photos of the physical build; adjust
+// once the real robot exists to compare against.
+const BODY_W = 90 * MM, BODY_D = 70 * MM, BODY_H = 110 * MM;
+const WHEEL_THICKNESS = 26 * MM;
+const PI_W = 85 * MM, PI_D = 56 * MM, PI_H = 17 * MM;   // actual Pi 3B footprint
+const RISER_H = 18 * MM;
+const TURNTABLE_R = 42 * MM, TURNTABLE_H = 14 * MM;
+const BRACKET_TILT = THREE.MathUtils.degToRad(35);
+
+// World-frame axis mapping (see the project's pose2d.py convention: heading
+// 0 = facing +x, increasing counter-clockwise, x/y is the floor plane):
+//   scene X = world x_mm,  scene Z = -world y_mm,  scene Y = up.
+// rotation.y = heading_rad (no sign flip) lands +X -> -Z under Three.js's
+// own right-handed convention, which is exactly world heading 0 -> 90
+// (facing +x -> facing +y) once translated through that Z negation. Verify
+// by watching the robot actually turn left/right correctly against the 2D
+// map's own arrow before trusting this comment over the code.
+function worldToScene(x_mm, y_mm) {
+  return [x_mm * MM, -y_mm * MM];
+}
+
+// -------------------------------------------------------------------- setup
+
+const pane = document.getElementById("scenePane");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+pane.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x171b21);
+scene.fog = new THREE.Fog(0x171b21, 12, 30);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+camera.position.set(2.2, 2.0, 2.6);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.15, 0);
+controls.enableDamping = true;
+
+function resize() {
+  const w = pane.clientWidth, h = pane.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x2a2416, 1.2));
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.8);
+sun.position.set(3, 5, 2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -6; sun.shadow.camera.right = 6;
+sun.shadow.camera.top = 6; sun.shadow.camera.bottom = -6;
+scene.add(sun);
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0x545b66, roughness: 0.95 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+scene.add(new THREE.GridHelper(40, 40, 0x6a7280, 0x454c56));
+
+// ---------------------------------------------------------------- the robot
+//
+// Styled after this project's own reference photos: two large wheels up
+// front, an upright NXT-brick body, a Raspberry Pi mounted on a small riser
+// on top, and a geared turntable driving a forward-tilted bracket carrying
+// a camera and an ultrasonic sensor.
+
+function buildWheel() {
+  // CylinderGeometry's axis defaults to Y with its circular face in the X-Z
+  // plane. The robot's forward axis is local X and up is local Y, so a
+  // wheel that actually rolls forward needs its round face in the X-Y
+  // plane and its axle (thickness) along Z — i.e. rotate the height axis
+  // Y onto Z, which is rotateX(90deg), NOT rotateZ (that would leave the
+  // wheel's flat face pointing forward instead of the disc edge touching
+  // the ground — it would roll sideways instead of forward).
+  const radius = 0.045; // overwritten per-instance to match config
+  const geo = new THREE.CylinderGeometry(radius, radius, WHEEL_THICKNESS, 24);
+  geo.rotateX(Math.PI / 2);
+  const tire = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.9 }));
+  tire.castShadow = true;
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.35, radius * 0.35, WHEEL_THICKNESS * 1.02, 16),
+    new THREE.MeshStandardMaterial({ color: 0xd4551f, roughness: 0.6 })
+  );
+  hub.rotation.x = Math.PI / 2;
+  const group = new THREE.Group();
+  group.add(tire, hub);
+  return group;
+}
+
+function buildRobot(wheelDiameterMm, trackWidthMm) {
+  const root = new THREE.Group();
+  const wheelRadius = (wheelDiameterMm * MM) / 2;
+  const halfTrack = (trackWidthMm * MM) / 2 + WHEEL_THICKNESS / 2;
+
+  for (const side of [-1, 1]) {
+    const wheel = buildWheel();
+    wheel.scale.setScalar(wheelRadius / 0.045);
+    wheel.scale.z = 1; // keep thickness (now the Z axis) un-scaled, only the radius
+    wheel.position.set(0, wheelRadius, side * halfTrack);
+    root.add(wheel);
+  }
+
+  const bodyY = wheelRadius;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(BODY_W, BODY_H, BODY_D),
+    new THREE.MeshStandardMaterial({ color: 0xe6e6e6, roughness: 0.6 })
+  );
+  body.position.set(-BODY_D * 0.1, bodyY + BODY_H / 2 - wheelRadius * 0.3, 0);
+  body.castShadow = true;
+  root.add(body);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.002, BODY_H * 0.28, BODY_D * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x143018, emissive: 0x1c4a22, roughness: 0.4 })
+  );
+  screen.position.set(body.position.x + BODY_W / 2 + 0.001, body.position.y + BODY_H * 0.15, 0);
+  root.add(screen);
+
+  const topOfBody = body.position.y + BODY_H / 2;
+
+  const riser = new THREE.Mesh(
+    new THREE.BoxGeometry(0.02, RISER_H, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x8a8f98 })
+  );
+  riser.position.set(body.position.x, topOfBody + RISER_H / 2, 0);
+  root.add(riser);
+
+  const pi = new THREE.Mesh(
+    new THREE.BoxGeometry(PI_D, PI_H, PI_W), // Pi's long edge runs across the robot
+    new THREE.MeshStandardMaterial({ color: 0x2f7d3a, roughness: 0.5 })
+  );
+  const piY = topOfBody + RISER_H + PI_H / 2;
+  pi.position.set(body.position.x, piY, 0);
+  pi.castShadow = true;
+  root.add(pi);
+
+  // A couple of small port-like details for recognizability.
+  const portMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+  const usb = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.012, 0.03), portMat);
+  usb.position.set(pi.position.x + PI_D / 2 - 0.003, piY + 0.006, PI_W * 0.15);
+  root.add(usb);
+
+  // ---- turret: turntable + tilted sensor bracket, rotates with turret_deg
+  const turret = new THREE.Group();
+  turret.position.set(body.position.x, piY + PI_H / 2, 0);
+  root.add(turret);
+
+  const turntable = new THREE.Mesh(
+    new THREE.CylinderGeometry(TURNTABLE_R, TURNTABLE_R, TURNTABLE_H, 32),
+    new THREE.MeshStandardMaterial({ color: 0x6a6f78, roughness: 0.5 })
+  );
+  turntable.position.y = TURNTABLE_H / 2;
+  turntable.castShadow = true;
+  turret.add(turntable);
+
+  const bracket = new THREE.Group();
+  bracket.position.set(0, TURNTABLE_H, 0);
+  bracket.rotation.z = -BRACKET_TILT; // tilt the sensor payload forward/down
+  turret.add(bracket);
+
+  const cam = new THREE.Mesh(
+    new THREE.BoxGeometry(0.025, 0.02, 0.025),
+    new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.3 })
+  );
+  cam.position.set(0.02, 0.03, -0.018);
+  cam.castShadow = true;
+  bracket.add(cam);
+
+  const sensor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.011, 0.011, 0.035, 16),
+    new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.6, roughness: 0.3 })
+  );
+  sensor.rotation.x = Math.PI / 2;
+  sensor.position.set(0.02, 0.03, 0.015);
+  sensor.castShadow = true;
+  bracket.add(sensor);
+
+  root.add(new THREE.Group()); // (placeholder root add already covers everything)
+  return { root, turret };
+}
+
+let robotDimensions = { wheel_diameter_mm: 90, track_width_mm: 115 };
+let robot = buildRobot(robotDimensions.wheel_diameter_mm, robotDimensions.track_width_mm);
+scene.add(robot.root);
+
+// ------------------------------------------------------------------- room
+
+const WALL_HEIGHT = 0.28, WALL_THICKNESS = 0.02;
+let roomGroup = new THREE.Group();
+scene.add(roomGroup);
+
+function buildRoom(walls) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x454a52, roughness: 0.85 });
+  for (const [a, b] of walls) {
+    const [ax, az] = worldToScene(a[0], a[1]);
+    const [bx, bz] = worldToScene(b[0], b[1]);
+    const length = Math.hypot(bx - ax, bz - az);
+    if (length < 0.01) continue;
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(length, WALL_HEIGHT, WALL_THICKNESS), mat);
+    wall.position.set((ax + bx) / 2, WALL_HEIGHT / 2, (az + bz) / 2);
+    wall.rotation.y = -Math.atan2(bz - az, bx - ax);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+  }
+  return group;
+}
+
+async function loadRoom() {
+  try {
+    const res = await fetch("/room.json", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    scene.remove(roomGroup);
+    roomGroup = buildRoom(data.walls || []);
+    scene.add(roomGroup);
+
+    if (data.robot) {
+      // Rebuild with the real wheel size/spacing from config.yaml (or the
+      // demo's fallback) rather than the generic placeholder dimensions
+      // the robot was first built with.
+      scene.remove(robot.root);
+      robotDimensions = data.robot;
+      robot = buildRobot(robotDimensions.wheel_diameter_mm, robotDimensions.track_width_mm);
+      scene.add(robot.root);
+    }
+  } catch (err) {
+    // No room configured for this session (see server.py's room_fn) — the
+    // robot still renders, just with nothing built around it.
+  }
+}
+loadRoom();
+
+// ---------------------------------------------------------------- polling
+
+function fmtPose(pose) {
+  if (!pose) return "—";
+  return `(${pose.x_mm.toFixed(0)}, ${pose.y_mm.toFixed(0)}) mm  ${pose.heading_deg.toFixed(0)}°`;
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/state.json", { cache: "no-store" });
+    const state = await res.json();
+    document.getElementById("offline").style.display = "none";
+
+    document.getElementById("state").textContent = state.state;
+    document.getElementById("state").className = state.state;
+    document.getElementById("coverage").textContent = (state.coverage * 100).toFixed(1) + "%";
+    document.getElementById("frontiers").textContent = state.frontier_count;
+    document.getElementById("pose").textContent = fmtPose(state.pose);
+    document.getElementById("turret").textContent = state.pose
+      ? state.pose.turret_deg.toFixed(0) + "°" : "—";
+    document.getElementById("battery").textContent = state.battery_mv
+      ? (state.battery_mv / 1000).toFixed(2) + " V" : "—";
+    document.getElementById("frames").textContent = state.link.frames_received;
+    const cksum = document.getElementById("checksum");
+    cksum.textContent = state.link.checksum_errors;
+    cksum.className = state.link.checksum_errors > 0 ? "value warn" : "value";
+
+    if (state.pose) {
+      const [x, z] = worldToScene(state.pose.x_mm, state.pose.y_mm);
+      robot.root.position.set(x, 0, z);
+      robot.root.rotation.y = THREE.MathUtils.degToRad(state.pose.heading_deg);
+      robot.turret.rotation.y = THREE.MathUtils.degToRad(state.pose.turret_deg);
+    }
+  } catch (err) {
+    document.getElementById("offline").style.display = "block";
+  }
+}
+setInterval(poll, 300);
+poll();
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Debug hook for interactive inspection during development. Harmless to
+// leave in — it only exposes references, doesn't change behavior.
+window.__scout_scene = { scene, camera, controls, robot, THREE };
+</script>
+</body>
+</html>

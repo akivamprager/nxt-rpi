@@ -5,9 +5,16 @@ This is deliberately the "watch it work tonight, no installs" version; Phase
 5 in the plan describes the fuller MQTT + Flask dashboard this is a stepping
 stone toward, once there's a real Pi to run Mosquitto on.
 
-The browser polls /state.json every ~300ms rather than using a WebSocket —
-simpler, and at this data rate and audience (one browser tab on the same
-machine or LAN) there is nothing to gain from a push connection.
+Serves two pages against the same live data:
+- `/` (index.html) — the 2D occupancy-grid map, polling `/state.json`.
+- `/scene.html` — a 3D view of the robot in the room, polling `/state.json`
+  and `/room.json`. See scene.html's own docstring-equivalent comment for
+  what "3D" does and doesn't mean here (ground-truth room geometry — a real
+  robot has no such oracle, only what it's actually mapped).
+
+Both poll rather than push (~300ms) — simpler than a WebSocket, and at this
+data rate and audience (one browser tab on the same machine or LAN) there is
+nothing to gain from one.
 """
 
 from __future__ import annotations
@@ -16,52 +23,67 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
+from typing import Callable, Optional
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_INDEX_PATH = os.path.join(_HERE, "index.html")
+
+#: path -> (file on disk, content-type). Kept as a plain dict rather than a
+#: general static-file server so nothing outside pi/web/ is ever reachable.
+_STATIC_PAGES = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/scene.html": ("scene.html", "text/html; charset=utf-8"),
+}
 
 
-def make_handler(snapshot_fn: Callable[[], dict]) -> type:
-    """Build a request handler bound to `snapshot_fn`.
+def make_handler(
+    snapshot_fn: Callable[[], dict], room_fn: Optional[Callable[[], dict]] = None
+) -> type:
+    """Build a request handler bound to the given data sources.
 
-    A closure rather than a constructor argument because `http.server`
+    A closure rather than constructor arguments because `http.server`
     instantiates the handler class itself for every request — there's no
     hook to pass extra arguments through.
     """
+
+    def _serve_json(handler: BaseHTTPRequestHandler, fn: Callable[[], dict]) -> None:
+        try:
+            body = json.dumps(fn()).encode("utf-8")
+            status = 200
+        except Exception as exc:  # noqa: BLE001 - surface it to the browser, don't crash the server
+            body = json.dumps({"error": str(exc)}).encode("utf-8")
+            status = 500
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+        handler.wfile.write(body)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             pass  # the default per-request console spam isn't useful here
 
         def do_GET(self) -> None:  # noqa: N802 - name required by BaseHTTPRequestHandler
-            if self.path in ("/", "/index.html"):
-                self._serve_index()
+            if self.path in _STATIC_PAGES:
+                self._serve_static(self.path)
             elif self.path == "/state.json":
-                self._serve_state()
+                _serve_json(self, snapshot_fn)
+            elif self.path == "/room.json":
+                if room_fn is None:
+                    self.send_error(404, "no room geometry configured for this session")
+                else:
+                    _serve_json(self, room_fn)
             else:
                 self.send_error(404)
 
-        def _serve_index(self) -> None:
-            with open(_INDEX_PATH, "rb") as f:
+        def _serve_static(self, path: str) -> None:
+            filename, content_type = _STATIC_PAGES[path]
+            with open(os.path.join(_HERE, filename), "rb") as f:
                 body = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _serve_state(self) -> None:
-            try:
-                body = json.dumps(snapshot_fn()).encode("utf-8")
-                status = 200
-            except Exception as exc:  # noqa: BLE001 - surface it to the browser, don't crash the server
-                body = json.dumps({"error": str(exc)}).encode("utf-8")
-                status = 500
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -69,13 +91,20 @@ def make_handler(snapshot_fn: Callable[[], dict]) -> type:
 
 
 def start(
-    snapshot_fn: Callable[[], dict], host: str = "127.0.0.1", port: int = 8080
+    snapshot_fn: Callable[[], dict],
+    room_fn: Optional[Callable[[], dict]] = None,
+    host: str = "127.0.0.1",
+    port: int = 8080,
 ) -> ThreadingHTTPServer:
     """Start the dashboard on a background thread and return the server.
 
+    `room_fn`, if given, powers `/scene.html`'s 3D room geometry (e.g.
+    `lambda: room.to_dict()` from sim_world.SimulatedRoom). Without it,
+    scene.html still works but renders the robot with no walls around it.
+
     Call `.shutdown()` on the returned server to stop it.
     """
-    server = ThreadingHTTPServer((host, port), make_handler(snapshot_fn))
+    server = ThreadingHTTPServer((host, port), make_handler(snapshot_fn, room_fn))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server

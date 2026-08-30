@@ -30,6 +30,10 @@
   #log div { padding: 2px 0; border-bottom: 1px solid #1c1f24; }
   .warn { color: #ffb454 !important; }
   #offline { display: none; color: #ff9d9d; margin-top: 8px; }
+  #nav { margin-bottom: 12px; }
+  #nav a { color: #8a8f98; text-decoration: none; font-size: 12px; }
+  #nav a.active { color: #9fd0ff; }
+  #nav span { color: #444; margin: 0 6px; }
 </style>
 </head>
 <body>
@@ -38,6 +42,7 @@
     <canvas id="grid" width="600" height="600"></canvas>
   </div>
   <div id="sidebar">
+    <div id="nav"><a class="active" href="/">2D map</a><span>·</span><a href="/scene.html">3D scene</a></div>
     <h1>SCOUT — LIVE MISSION</h1>
     <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
     <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>

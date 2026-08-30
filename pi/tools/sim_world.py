@@ -123,3 +123,13 @@ class SimulatedRoom:
 
     def is_colliding(self, x_mm: float, y_mm: float, robot_radius_mm: float = 90.0) -> bool:
         return self.clearance(x_mm, y_mm) < robot_radius_mm
+
+    def to_dict(self) -> dict:
+        """JSON-serialisable wall list, for the 3D scene viewer.
+
+        This is ground-truth room geometry — useful for a visually complete
+        demo scene, but worth being explicit that a real robot has no such
+        oracle. It only ever knows what mapping.py's occupancy grid has
+        actually observed; see pi/web/scene.html's note on this.
+        """
+        return {"walls": [[list(a), list(b)] for a, b in self.walls]}

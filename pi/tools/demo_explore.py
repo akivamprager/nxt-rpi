@@ -19,6 +19,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
+from scout import config as cfg  # noqa: E402
 from scout.mapping import OccupancyGrid  # noqa: E402
 from scout.mission import ExplorationMission  # noqa: E402
 from scout.robot import Robot  # noqa: E402
@@ -26,6 +27,23 @@ from scout.transport import SocketTransport  # noqa: E402
 from sim_firmware import make_simulated_pair  # noqa: E402
 from sim_world import SimulatedRoom  # noqa: E402
 from web.server import start as start_dashboard  # noqa: E402
+
+_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.yaml")
+
+
+def load_wheel_geometry() -> dict:
+    """Real measurements from config.yaml if it parses, otherwise a
+    reasonable fallback for the demo. Ties the 3D scene's wheel size and
+    spacing to the same source that will drive real motion once hardware
+    exists, per docs/BUILD.md's "before Phase 1" measurements."""
+    try:
+        robot = cfg.load(_CONFIG_PATH).robot
+        return {
+            "wheel_diameter_mm": robot.wheel_diameter_mm,
+            "track_width_mm": robot.track_width_mm,
+        }
+    except Exception:  # noqa: BLE001 - config.yaml may not parse yet; demo still runs
+        return {"wheel_diameter_mm": 56.0, "track_width_mm": 115.0}
 
 
 def build_room() -> SimulatedRoom:
@@ -72,9 +90,15 @@ def main() -> int:
     mission_thread = threading.Thread(target=mission.run, daemon=True)
     mission_thread.start()
 
-    dashboard = start_dashboard(mission.snapshot, port=8080)
+    def room_fn() -> dict:
+        data = room.to_dict()
+        data["robot"] = load_wheel_geometry()
+        return data
+
+    dashboard = start_dashboard(mission.snapshot, room_fn=room_fn, port=8080)
     print("Scout is exploring a simulated room.")
-    print("Open http://127.0.0.1:8080 to watch it live.")
+    print("Open http://127.0.0.1:8080 for the 2D map, or")
+    print("     http://127.0.0.1:8080/scene.html for the 3D view.")
     print("Ctrl-C to stop.\n")
 
     try:

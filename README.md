@@ -104,6 +104,33 @@ consecutive commands and zero failures; see
 `test_turret_to_does_not_return_before_the_turret_actually_moves` in
 `pi/tests/test_robot.py`.
 
+### The same demo, in 3D
+
+```bash
+python3 pi/tools/demo_explore.py
+# then open http://127.0.0.1:8080/scene.html
+```
+
+A styled 3D view of the exact same live mission — same server, same
+`/state.json`, same robot driving around the same simulated room, just
+rendered with Three.js (loaded from a CDN; this demo tool's one departure
+from "no internet dependency" — the real Phase 5 dashboard stays offline)
+instead of the 2D map's flat canvas. Drag to orbit, scroll to zoom.
+
+The robot model — two wheels with orange hubs, an upright NXT-brick body, a
+Raspberry Pi on a small riser, a turntable driving a forward-tilted bracket
+with a camera and an ultrasonic sensor — is styled after an actual reference
+photo of a similar NXT+Pi+camera build, not guessed. Wheel size and spacing
+come from `config.yaml`'s real `wheel_diameter_mm`/`track_width_mm` (falling
+back to reasonable defaults if it doesn't parse yet), so the model's
+proportions correct themselves automatically once real measurements go in.
+
+One thing worth being upfront about: the room walls rendered in 3D are
+**ground truth from the simulator**, shown for a complete-looking scene —
+scene.html says so directly in its own on-page note. A real robot never gets
+this view; it only ever knows what `mapping.py`'s occupancy grid has
+actually observed, which is what the 2D map at `/` honestly shows instead.
+
 ## Try it without hardware
 
 The whole Pi stack runs against a simulated brick.
