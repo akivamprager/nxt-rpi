@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scout — live mission</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: #12151a;
+    color: #e6e6e6;
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #layout { display: flex; height: 100vh; }
+  #mapPane { flex: 1; display: flex; align-items: center; justify-content: center; background: #0a0c0f; }
+  #grid { image-rendering: pixelated; border: 1px solid #333; }
+  #sidebar { width: 320px; padding: 16px; overflow-y: auto; box-sizing: border-box; border-left: 1px solid #2a2e35; }
+  h1 { font-size: 15px; margin: 0 0 12px; letter-spacing: 0.02em; color: #9fd0ff; }
+  .row { display: flex; justify-content: space-between; margin: 4px 0; }
+  .label { color: #8a8f98; }
+  .value { font-variant-numeric: tabular-nums; }
+  #state {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    background: #2a2e35; font-weight: 600;
+  }
+  #state.DONE { background: #1e4620; color: #8fe08f; }
+  #state.RECOVERING { background: #4a2020; color: #ff9d9d; }
+  hr { border: none; border-top: 1px solid #2a2e35; margin: 12px 0; }
+  #log { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: #a9b4c0; }
+  #log div { padding: 2px 0; border-bottom: 1px solid #1c1f24; }
+  .warn { color: #ffb454 !important; }
+  #offline { display: none; color: #ff9d9d; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="mapPane">
+    <canvas id="grid" width="600" height="600"></canvas>
+  </div>
+  <div id="sidebar">
+    <h1>SCOUT — LIVE MISSION</h1>
+    <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
+    <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
+    <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
+    <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
+    <hr>
+    <div class="row"><span class="label">frames rx</span><span id="frames" class="value">—</span></div>
+    <div class="row"><span class="label">checksum errs</span><span id="checksum" class="value">—</span></div>
+    <div id="offline">no response from the dashboard server</div>
+    <hr>
+    <div id="log"></div>
+  </div>
+</div>
+<script>
+// Colors: unknown / free / occupied, matching mapping.py's UNKNOWN/FREE/OCCUPIED.
+const CELL_COLORS = ["#2a2e35", "#e8e8e8", "#1a1a1a"];
+const ROBOT_COLOR = "#54a3ff";
+const TARGET_COLOR = "#ffcf54";
+const canvas = document.getElementById("grid");
+const ctx = canvas.getContext("2d");
+
+function draw(state) {
+  const g = state.grid;
+  const cellPx = Math.max(2, Math.min(24, Math.floor(600 / Math.max(g.width, g.height))));
+  canvas.width = g.width * cellPx;
+  canvas.height = g.height * cellPx;
+
+  for (let cy = 0; cy < g.height; cy++) {
+    const row = g.cells[cy];
+    for (let cx = 0; cx < g.width; cx++) {
+      ctx.fillStyle = CELL_COLORS[row[cx]];
+      // World Y increases "downward" in this view — a debug map, not a
+      // compass-oriented one, so as long as pose and cells agree it's fine.
+      ctx.fillRect(cx * cellPx, cy * cellPx, cellPx, cellPx);
+    }
+  }
+
+  function worldToCanvas(x_mm, y_mm) {
+    return [
+      ((x_mm - g.origin_x_mm) / g.cell_size_mm) * cellPx,
+      ((y_mm - g.origin_y_mm) / g.cell_size_mm) * cellPx,
+    ];
+  }
+
+  if (state.target) {
+    const [tx, ty] = worldToCanvas(state.target.x_mm, state.target.y_mm);
+    ctx.fillStyle = TARGET_COLOR;
+    ctx.beginPath();
+    ctx.arc(tx, ty, cellPx * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (state.pose) {
+    const [px, py] = worldToCanvas(state.pose.x_mm, state.pose.y_mm);
+    const heading = (state.pose.heading_deg * Math.PI) / 180;
+    ctx.fillStyle = ROBOT_COLOR;
+    ctx.beginPath();
+    ctx.arc(px, py, cellPx * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = ROBOT_COLOR;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + Math.cos(heading) * cellPx * 2.2, py + Math.sin(heading) * cellPx * 2.2);
+    ctx.stroke();
+  }
+}
+
+function fmtPose(pose) {
+  if (!pose) return "—";
+  return `(${pose.x_mm.toFixed(0)}, ${pose.y_mm.toFixed(0)}) mm  ${pose.heading_deg.toFixed(0)}°`;
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/state.json", { cache: "no-store" });
+    const state = await res.json();
+    document.getElementById("offline").style.display = "none";
+
+    document.getElementById("state").textContent = state.state;
+    document.getElementById("state").className = state.state;
+    document.getElementById("coverage").textContent = (state.coverage * 100).toFixed(1) + "%";
+    document.getElementById("frontiers").textContent = state.frontier_count;
+    document.getElementById("pose").textContent = fmtPose(state.pose);
+    document.getElementById("battery").textContent = state.battery_mv
+      ? (state.battery_mv / 1000).toFixed(2) + " V"
+      : "—";
+    document.getElementById("frames").textContent = state.link.frames_received;
+    const cksum = document.getElementById("checksum");
+    cksum.textContent = state.link.checksum_errors;
+    cksum.className = state.link.checksum_errors > 0 ? "value warn" : "value";
+
+    const log = document.getElementById("log");
+    log.innerHTML = "";
+    for (const entry of state.log.slice().reverse()) {
+      const div = document.createElement("div");
+      const t = new Date(entry.t * 1000).toLocaleTimeString();
+      div.textContent = `${t}  ${entry.text}`;
+      log.appendChild(div);
+    }
+
+    draw(state);
+  } catch (err) {
+    document.getElementById("offline").style.display = "block";
+  }
+}
+
+setInterval(poll, 300);
+poll();
+</script>
+</body>
+</html>

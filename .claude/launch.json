@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "scout-explore-demo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["pi/tools/demo_explore.py"],
+      "port": 8080
+    }
+  ]
+}

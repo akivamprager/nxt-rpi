@@ -1,0 +1,22 @@
+# Pi-side dependencies.
+#
+# Phases 0-2 (protocol, transport, teleop, tests, simulator) need NOTHING here
+# beyond the standard library, deliberately: the link layer should be
+# debuggable on a fresh Pi with no installs. Everything below is for later
+# phases.
+
+# --- Phase 3: vision ---
+# picamera2 is NOT installed via pip. It ships with Raspberry Pi OS Bookworm:
+#     sudo apt install -y python3-picamera2
+# The legacy `picamera` library does not work on Bookworm.
+opencv-contrib-python>=4.8      # contrib: cv2.aruco lives here
+numpy>=1.24
+
+# --- Phase 4: mapping ---
+PyYAML>=6.0                     # config.yaml
+
+# --- Phase 5: IoT ---
+paho-mqtt>=2.0
+Flask>=3.0
+flask-sock>=0.7                 # WebSocket push for live map + telemetry
+gpiozero>=2.0                   # status LEDs and the start/stop button

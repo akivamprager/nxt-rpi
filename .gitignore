@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Firmware build output
+nxt-firmware/build/
+*.nxj
+*.class
+
+# Camera intrinsics are specific to your physical camera, and generated
+# markers are reproducible from the generator.
+pi/calibration/*.npz
+markers/*.png
