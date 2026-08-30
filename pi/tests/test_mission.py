@@ -139,6 +139,59 @@ def test_stuck_target_is_avoided_on_the_next_plan():
         assert first_target in mission._avoid
 
 
+def test_stuck_detection_is_not_fooled_by_a_recovery_backup():
+    """Regression test for a real bug caught via live testing: the first
+    version of the stuck-target fix measured raw robot displacement between
+    plans, and RECOVERING's ~150mm backup after every bump always satisfies
+    that — so a robot oscillating approach-bump-retreat against the same
+    wall forever looked like 'plenty of movement' each cycle and was never
+    blacklisted. The user's exact words: 'it just keeps banging into the
+    same wall.'
+
+    Simulated here directly via set_pose (not a real bump), because what's
+    under test is _do_plan's progress arithmetic, not the drive/recover
+    state machine (that part is already covered by test_recover_backs_
+    away_from_the_obstacle). The robot moves 150mm between plans — comfortably
+    above the OLD 30mm displacement threshold, which would have let this
+    slide — but in the wrong direction, so distance to the target does not
+    improve. The new check must catch that.
+    """
+    room = SimulatedRoom(walls=[((2000.0, -2000.0), (2000.0, 2000.0))])
+    with Harness(room) as h:
+        grid = OccupancyGrid(width=50, height=40, cell_size_mm=100.0, origin_x_mm=-2000, origin_y_mm=-2000)
+        mission = ExplorationMission(h.robot, grid, min_frontier_cluster=1)
+
+        # A near "trap" frontier and a far, genuinely reachable one.
+        trap_cx, trap_cy = grid.world_to_cell(300, 0)
+        for dx in (-1, 0, 1):
+            grid.log_odds[trap_cy][trap_cx + dx] = -2.0
+        far_cx, far_cy = grid.world_to_cell(1800, 0)
+        for dx in (-1, 0, 1):
+            grid.log_odds[far_cy][far_cx + dx] = -2.0
+
+        h.robot.set_pose(0, 0, 0)
+        assert wait_until(lambda: abs(h.robot.telemetry.x_mm) < 1.0)
+        mission._do_plan()
+        first_target = mission._target
+        assert first_target[0] < 1000, "sanity check: should start by targeting the near trap"
+
+        # "Recovery" moves the robot 150mm — real, substantial displacement,
+        # but backward, away from the trap it was just approaching.
+        h.robot.set_pose(-150, 0, 0)
+        assert wait_until(lambda: abs(h.robot.telemetry.x_mm - (-150)) < 1.0)
+        mission._do_plan()
+
+        assert mission._target != first_target, (
+            "150mm of real displacement in the wrong direction must still "
+            "count as stuck — this is exactly what let the mission bang "
+            "into the same wall forever before this fix"
+        )
+        assert mission._target[0] > 1000, (
+            f"should have moved on to the far frontier, got {mission._target}"
+        )
+        assert first_target in mission._avoid
+
+
 def test_mission_ends_rather_than_looping_forever_on_a_single_unreachable_frontier():
     """Regression test for a bug in the first version of the stuck-target
     fix itself, caught via live testing: when the ONLY remaining frontier is

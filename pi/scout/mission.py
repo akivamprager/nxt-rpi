@@ -97,7 +97,7 @@ class ExplorationMission:
         #: stuck-target detection. Pruned as the map changes.
         self._avoid: set[tuple[float, float]] = set()
         self._previous_target: tuple[float, float] | None = None
-        self._previous_position: tuple[float, float] | None = None
+        self._previous_distance_to_target: float | None = None
 
         robot.on_event(self._on_robot_event)
 
@@ -169,10 +169,15 @@ class ExplorationMission:
 
     # ------------------------------------------------------------- PLANNING
 
-    #: If the same frontier is chosen twice in a row with the robot having
-    #: moved less than this since the last plan, sweeping-in-place isn't
-    #: resolving it — see the stuck-target check below.
-    _STUCK_MOVEMENT_THRESHOLD_MM = 30.0
+    #: If the same frontier is chosen again and the robot's distance to it
+    #: hasn't shrunk by at least this much since the last time it was
+    #: picked, treat it as stuck — see the check below. Must be comfortably
+    #: smaller than a normal hop (DEFAULT_TRAVEL_STEP_MM) so real multi-hop
+    #: progress is never mistaken for being stuck, and comfortably larger
+    #: than RECOVERY_BACKUP_MM so a bump-recover-bump oscillation — which
+    #: moves the robot by more than that on every single cycle without ever
+    #: actually closing on the target — cannot disguise itself as progress.
+    _STUCK_PROGRESS_THRESHOLD_MM = 60.0
 
     def _do_plan(self) -> None:
         frontiers = explore.find_frontiers(
@@ -215,28 +220,34 @@ class ExplorationMission:
             self.state = DONE
             return
         chosen_point = (chosen.centroid_x_mm, chosen.centroid_y_mm)
+        distance_to_target = math.hypot(
+            chosen_point[0] - current[0], chosen_point[1] - current[1]
+        )
 
-        # A frontier that keeps coming back as "nearest" while the robot
-        # hasn't actually moved is not resolvable by sweeping from here —
-        # most likely it sits in the turret's permanent blind arc directly
-        # behind the robot (the firmware caps turret travel at +/-120
-        # degrees, short of the full 360 needed to ever see straight back),
-        # or it's on the far side of an obstacle that straight-line nearest-
-        # frontier selection has no way to route around (see explore.py's
-        # docstring — a full path planner is deliberately out of scope).
-        # Retrying it forever would stall the mission, so set it aside.
-        if self._previous_position is None:
-            distance_since_last_plan = float("inf")
+        # A frontier that keeps coming back as "nearest" without the robot
+        # actually getting closer to it is not resolvable from here — either
+        # it sits in the turret's permanent blind arc directly behind the
+        # robot (the firmware caps turret travel at +/-120 degrees, short of
+        # the full 360 needed to ever see straight back), or it's on the far
+        # side of an obstacle that straight-line nearest-frontier selection
+        # has no way to route around (see explore.py's docstring — a full
+        # path planner is deliberately out of scope).
+        #
+        # This checks progress toward the target, not raw robot displacement
+        # — the first version of this fix used displacement, and a real bug
+        # caught via live testing showed why that's wrong: RECOVERING backs
+        # the robot up ~150mm on every bump, which reads as "plenty of
+        # movement" even while the robot oscillates approach-bump-retreat
+        # against the same wall forever, net distance to the target never
+        # actually shrinking. Progress is immune to that: a backup that
+        # undoes the approach shows up as near-zero or negative progress,
+        # while a real multi-hop approach shows a strong decrease each cycle.
+        if self._previous_target == chosen_point and self._previous_distance_to_target is not None:
+            progress = self._previous_distance_to_target - distance_to_target
         else:
-            distance_since_last_plan = math.hypot(
-                current[0] - self._previous_position[0],
-                current[1] - self._previous_position[1],
-            )
+            progress = float("inf")  # first time targeting this point: no verdict yet
 
-        if (
-            self._previous_target == chosen_point
-            and distance_since_last_plan < self._STUCK_MOVEMENT_THRESHOLD_MM
-        ):
+        if self._previous_target == chosen_point and progress < self._STUCK_PROGRESS_THRESHOLD_MM:
             self._avoid.add(chosen_point)
             retry = pick(self._avoid)
             if retry is None:
@@ -249,13 +260,15 @@ class ExplorationMission:
                 self.state = DONE
                 return
             chosen, chosen_point = retry, (retry.centroid_x_mm, retry.centroid_y_mm)
+            distance_to_target = math.hypot(
+                chosen_point[0] - current[0], chosen_point[1] - current[1]
+            )
             self._log(
-                f"target ({chosen_point[0]:.0f}, {chosen_point[1]:.0f}) unresolved "
-                f"after sweeping in place; trying elsewhere"
+                f"target unresolved after {progress:+.0f}mm of progress; trying elsewhere"
             )
 
         self._previous_target = chosen_point
-        self._previous_position = current
+        self._previous_distance_to_target = distance_to_target
         with self._lock:
             self._target = chosen_point
         self._log(
