@@ -223,8 +223,22 @@ class Robot:
         self._send_awaiting_ack(p.turret_to(angle_deg))
         if not wait:
             return True
+        # Captured AFTER the ACK returns, not before sending: the ACK is the
+        # firmware's guarantee that it has already applied this command
+        # (updated its target), so any telemetry frame it generates from
+        # this point on reflects the new target. Capturing the baseline
+        # before sending is NOT enough — a telemetry frame can arrive after
+        # that earlier timestamp while still describing state from BEFORE
+        # the firmware processed our command, purely due to network/
+        # scheduling latency between "we sent it" and "the firmware acted
+        # on it." Caught via live testing: with the earlier (too-early)
+        # baseline, turret_to(60) could still return true while showing the
+        # tail end of the *previous* command's motion, because a stale-ish
+        # frame slipped in just after the naive baseline but before the
+        # firmware had actually started the new move.
+        baseline = time.monotonic()
         return self._wait_until(
-            lambda t: not (t.flags & p.FLAG_TURRET_MOVING), timeout=timeout
+            lambda t: not (t.flags & p.FLAG_TURRET_MOVING), timeout=timeout, after=baseline
         )
 
     def set_pose(self, x_mm: float, y_mm: float, heading_deg: float) -> None:
@@ -273,13 +287,29 @@ class Robot:
         return self.telemetry
 
     def _wait_until(
-        self, predicate: Callable[[p.Telemetry], bool], timeout: float
+        self,
+        predicate: Callable[[p.Telemetry], bool],
+        timeout: float,
+        after: Optional[float] = None,
     ) -> bool:
-        """Poll telemetry until ``predicate`` holds or the timeout expires."""
+        """Poll telemetry until ``predicate`` holds or the timeout expires.
+
+        If ``after`` is given (a `time.monotonic()` timestamp), frames that
+        arrived at or before it are ignored — otherwise a frame cached from
+        before the caller's command was even sent could satisfy the
+        predicate by coincidence, returning success without having actually
+        waited for anything.
+        """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            telemetry = self.telemetry
-            if telemetry is not None and predicate(telemetry):
+            with self._lock:
+                telemetry = self._telemetry
+                telemetry_time = self._telemetry_time
+            if (
+                telemetry is not None
+                and (after is None or telemetry_time > after)
+                and predicate(telemetry)
+            ):
                 return True
             if self._stop.is_set():
                 return False

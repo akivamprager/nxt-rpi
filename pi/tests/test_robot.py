@@ -189,6 +189,28 @@ def test_turret_reports_actual_bearing_not_requested():
         assert wait_until(lambda: abs(h.robot.telemetry.turret_deg - 90.0) < 1.0)
 
 
+def test_turret_to_does_not_return_before_the_turret_actually_moves():
+    """Regression test for a real race caught via live testing (in
+    mission.py's sweep, which calls turret_to(wait=True) repeatedly): if the
+    turret was already stationary, the first telemetry frame polled by
+    _wait_until could be a STALE one from before the command was even sent,
+    with FLAG_TURRET_MOVING clear for the OLD reason (hadn't started) rather
+    than the new one (already arrived) — turret_to(wait=True) would then
+    return success immediately while the simulated turret was still at its
+    old angle. Several consecutive commands make the race deterministic to
+    reproduce, since it depends on winning a narrow timing window.
+    """
+    with Harness() as h:
+        for target in (30.0, -30.0, 60.0, -60.0, 0.0):
+            assert h.robot.turret_to(target, timeout=6.0)
+            # The instant turret_to() returns, the simulated ground truth
+            # must already reflect it — not "will get there eventually."
+            assert abs(h.sim.turret - target) < 1.0, (
+                f"turret_to({target}) returned before the turret arrived: "
+                f"sim.turret={h.sim.turret}"
+            )
+
+
 def test_stop_halts_continuous_drive():
     with Harness() as h:
         assert h.robot.drive(200, 0)

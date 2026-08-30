@@ -21,12 +21,22 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 from . import explore
 from . import protocol as p
 from .explore import Frontier
 from .mapping import OccupancyGrid
+from .pose2d import Pose2D
 from .robot import Robot, RobotError
+
+#: Called with the turret's current bearing after each sweep stop; returns a
+#: corrected chassis Pose2D if a known marker was seen from there, or None.
+#: Kept as a plain callable (rather than importing vision.py/localize.py
+#: directly) so mission.py has no dependency on opencv — a mission with no
+#: localizer behaves exactly as before, which is what every existing test
+#: exercises. See main.py for how a real MarkerLocalizer plugs in here.
+Localizer = Callable[[float], Optional[Pose2D]]
 
 IDLE, SWEEPING, PLANNING, DRIVING, RECOVERING, DONE = (
     "IDLE",
@@ -65,12 +75,14 @@ class ExplorationMission:
         sweep_angles: tuple[float, ...] = DEFAULT_SWEEP_ANGLES,
         travel_step_mm: float = DEFAULT_TRAVEL_STEP_MM,
         min_frontier_cluster: int = 3,
+        localizer: Optional[Localizer] = None,
     ) -> None:
         self.robot = robot
         self.grid = grid
         self.sweep_angles = sweep_angles
         self.travel_step_mm = travel_step_mm
         self.min_frontier_cluster = min_frontier_cluster
+        self.localizer = localizer
 
         self.state = IDLE
         self._stop = threading.Event()
@@ -144,6 +156,15 @@ class ExplorationMission:
                 range_cm=telemetry.range_cm,
                 has_echo=telemetry.has_echo,
             )
+
+            if self.localizer is not None:
+                corrected = self.localizer(telemetry.turret_deg)
+                if corrected is not None:
+                    self.robot.set_pose(corrected.x_mm, corrected.y_mm, corrected.heading_deg)
+                    self._log(
+                        f"localized: corrected pose to ({corrected.x_mm:.0f}, "
+                        f"{corrected.y_mm:.0f}, {corrected.heading_deg:.1f}deg)"
+                    )
         self.robot.turret_to(0.0, wait=True, timeout=5.0)
 
     # ------------------------------------------------------------- PLANNING

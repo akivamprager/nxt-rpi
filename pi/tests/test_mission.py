@@ -166,6 +166,39 @@ def test_mission_ends_rather_than_looping_forever_on_a_single_unreachable_fronti
         assert mission.state == DONE
 
 
+def test_sweep_applies_a_localizer_correction():
+    """A stand-in for real vision: the localizer hook is a plain callable,
+    so this proves the wiring (sweep -> localizer -> robot.set_pose) works
+    without needing opencv or a camera at all. main.py plugs a real
+    MarkerLocalizer (vision.py + localize.py) into this exact same hook.
+    """
+    room = SimulatedRoom(walls=[((2000.0, -2000.0), (2000.0, 2000.0))])
+    with Harness(room) as h:
+        grid = OccupancyGrid(width=10, height=10, cell_size_mm=100.0)
+        calls = []
+
+        def fake_localizer(turret_deg):
+            calls.append(turret_deg)
+            if turret_deg == 0.0:
+                from scout.pose2d import Pose2D
+
+                return Pose2D(500.0, -250.0, 45.0)
+            return None
+
+        mission = ExplorationMission(
+            h.robot, grid, sweep_angles=(-30.0, 0.0, 30.0), localizer=fake_localizer
+        )
+        mission._do_sweep()
+
+        assert calls == [-30.0, 0.0, 30.0], "localizer must be called at every sweep stop"
+        assert wait_until(
+            lambda: h.robot.telemetry is not None
+            and abs(h.robot.telemetry.x_mm - 500.0) < 1.0
+            and abs(h.robot.telemetry.y_mm - (-250.0)) < 1.0
+            and abs(h.robot.telemetry.heading_deg - 45.0) < 0.5
+        ), "the localizer's correction must have been applied via robot.set_pose"
+
+
 def test_full_mission_explores_a_small_room_and_terminates():
     # Centered on the origin, NOT anchored at a corner: the robot's odometry
     # always starts at (0, 0), and SimulatedRoom.rectangle(w, h) anchors its

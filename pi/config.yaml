@@ -1,0 +1,89 @@
+# Scout robot configuration.
+#
+# Every number here is specific to this physical build. The placeholder
+# values below are reasonable defaults or guesses — replace them with real
+# measurements as you take them. See docs/BUILD.md for what to measure and
+# when; the comments below point at the specific section for each value.
+#
+# Validated by pi/scout/config.py (see pi/tests/test_config.py for exactly
+# what counts as valid). A mistake here fails loudly at startup with a
+# specific field name, rather than producing a robot that just behaves
+# strangely.
+
+robot:
+  # Measure with calipers before Phase 1 (uploading firmware) — see
+  # docs/BUILD.md "Before Phase 1". Every downstream pose estimate inherits
+  # these; a 2% error here is a 2% range error on every wall the robot maps.
+  wheel_diameter_mm: 56.0
+  # Centre-to-centre of the two drive wheels/tracks, not edge-to-edge.
+  track_width_mm: 115.0
+
+  # Motor degrees per turret degree. 1.0 for the direct-drive mount
+  # docs/BUILD.md describes. Must match TURRET_GEAR_RATIO in
+  # nxt-firmware/src/scout/ScoutServer.java exactly, or turret angles the
+  # Pi computes will be wrong by this ratio.
+  turret_gear_ratio: 1.0
+  # Must match TURRET_MAX_ANGLE_DEG in ScoutServer.java — this is the
+  # software limit protecting the camera's CSI ribbon, not a free choice.
+  turret_max_angle_deg: 120.0
+
+camera:
+  # Measured once the camera is physically mounted on the turret — see
+  # docs/BUILD.md's "Note for later (Phase 3)". camera_mount is the
+  # camera's position relative to the turret's own rotation axis, with the
+  # turret at its zero/centred position: how far forward (x_mm) and to the
+  # side (y_mm, positive = left) the camera sits, and heading_deg for any
+  # mounting rotation (0 if it points the same way the turret does).
+  camera_mount:
+    x_mm: 40.0
+    y_mm: 0.0
+    heading_deg: 0.0
+
+  # The turret's rotation axis position relative to the chassis's odometry
+  # origin (wherever DifferentialPilot considers (0,0) to be — typically the
+  # midpoint between the two drive wheels).
+  turret_mount:
+    x_mm: 20.0
+    y_mm: 0.0
+    heading_deg: 0.0
+
+  # Path to the camera intrinsics produced by the Phase 3 calibration step
+  # (checkerboard capture + cv2.calibrateCamera). Relative to this file.
+  intrinsics_path: calibration/camera.npz
+
+grid:
+  # Sized to cover the room with margin on every side — the grid represents
+  # a bounded area, and the edge of the array is a modelling boundary, not
+  # something to explore toward (see explore.py's find_frontier_cells).
+  # Defaults here cover a 6m x 6m area at 10cm resolution, centred on the
+  # robot's starting position.
+  width: 60
+  height: 60
+  cell_size_mm: 100.0
+  origin_x_mm: -3000.0
+  origin_y_mm: -3000.0
+
+mission:
+  # Turret bearings sampled at each sweep stop, in degrees relative to the
+  # chassis. Must stay well inside +/- turret_max_angle_deg above.
+  sweep_angles_deg: [-90, -60, -30, 0, 30, 60, 90]
+  # How far to drive toward a frontier before stopping to re-sweep and
+  # re-plan. Short hops mean a wrong straight-line choice self-corrects
+  # quickly rather than committing to a long drive toward an obstacle.
+  travel_step_mm: 400.0
+  # Frontier clusters smaller than this many cells are treated as noise
+  # and ignored (see explore.find_frontiers).
+  min_frontier_cluster: 3
+
+# Printed ArUco markers (DICT_4X4_50), surveyed by hand into the room.
+# `pose` is the marker's position and the direction it faces outward from
+# its wall (heading_deg: 0 = facing +x, 90 = facing +y, etc — same
+# convention as everywhere else in this project).
+#
+# Empty until markers are printed and placed; the room can be explored via
+# odometry alone before that, just with more drift over time.
+markers: []
+# Example, once you've placed and measured one:
+# markers:
+#   - id: 0
+#     pose: {x_mm: 3000.0, y_mm: 0.0, heading_deg: 180.0}
