@@ -118,7 +118,9 @@
 <div id="layout">
   <div id="scenePane">
     <div id="note">Room walls shown here are ground truth from the simulator — a real
-      robot has no such view, only what it has actually mapped (see the 2D map).</div>
+      robot has no such view. The orange dots are the honest part: an earned 3D point
+      cloud built from repeated simulated depth-camera scans, the same way the 2D map
+      is built from repeated ultrasonic readings.</div>
     <div id="hint">drag to orbit · pinch/scroll to zoom · two-finger drag to pan</div>
     <button id="sidebarToggle" title="Show info">&#9776;</button>
     <div id="zoomControls">
@@ -142,6 +144,7 @@
     <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
     <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
     <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label">cloud pts</span><span id="cloudPoints" class="value">—</span></div>
     <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
     <div class="row"><span class="label">turret</span><span id="turret" class="value">—</span></div>
     <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
@@ -201,6 +204,13 @@ const BRACKET_TILT = THREE.MathUtils.degToRad(35);
 // map's own arrow before trusting this comment over the code.
 function worldToScene(x_mm, y_mm) {
   return [x_mm * MM, -y_mm * MM];
+}
+
+// Same convention as worldToScene, extended with height: world z_mm (up)
+// maps straight onto scene Y (also up) — no sign flip needed there, only
+// on the floor-plane y_mm -> scene Z axis.
+function pointToScene(x_mm, y_mm, z_mm) {
+  return [x_mm * MM, z_mm * MM, -y_mm * MM];
 }
 
 // -------------------------------------------------------------------- setup
@@ -311,6 +321,16 @@ const sensorRay = new THREE.Line(
 );
 sensorRay.frustumCulled = false;
 scene.add(sensorRay);
+
+// The earned 3D point cloud (see /pointcloud.json and pointcloud.py) — an
+// empty BufferGeometry to start, its position attribute replaced wholesale
+// each time loadPointCloud() polls, same pattern as the room/robot below.
+const pointCloud = new THREE.Points(
+  new THREE.BufferGeometry(),
+  new THREE.PointsMaterial({ color: 0xffb454, size: 0.02, sizeAttenuation: true })
+);
+pointCloud.frustumCulled = false;
+scene.add(pointCloud);
 
 scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x2a2416, 1.2));
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.8);
@@ -902,6 +922,34 @@ async function poll() {
 }
 setInterval(poll, 300);
 poll();
+
+async function loadPointCloud() {
+  try {
+    const res = await fetch("/pointcloud.json", { cache: "no-store" });
+    if (!res.ok) return; // no depth-scanner configured for this session
+    const data = await res.json();
+    const points = data.points || [];
+    document.getElementById("cloudPoints").textContent = points.length;
+
+    const positions = new Float32Array(points.length * 3);
+    for (let i = 0; i < points.length; i++) {
+      const [x, y, z] = pointToScene(points[i][0], points[i][1], points[i][2]);
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+    }
+    pointCloud.geometry.dispose();
+    pointCloud.geometry = new THREE.BufferGeometry();
+    pointCloud.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  } catch (err) {
+    // No point cloud for this session — leave whatever was last rendered.
+  }
+}
+// Slower than the pose/sensor poll: the cloud only grows monotonically
+// within a lap (see PointCloudMap's dedup) rather than changing every
+// telemetry tick, so there's nothing to gain from polling it that often.
+setInterval(loadPointCloud, 1000);
+loadPointCloud();
 
 function animate() {
   requestAnimationFrame(animate);

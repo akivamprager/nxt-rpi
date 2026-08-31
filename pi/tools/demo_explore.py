@@ -32,6 +32,7 @@ behavior above):
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 import threading
@@ -89,6 +90,47 @@ def build_room() -> SimulatedRoom:
     return room
 
 
+#: A fixed downward tilt for the simulated depth camera, matching the visual
+#: forward-leaning bracket in scene.html's robot model — a level camera
+#: would mostly see the far wall instead of the floor and nearby obstacles a
+#: real mapping camera needs to see.
+DEPTH_CAMERA_PITCH_DEG = -20.0
+#: Mount point relative to the chassis origin: forward of the turret's own
+#: axis (the camera sits at the front of the turret housing, not its
+#: center) and up at roughly turret height.
+DEPTH_CAMERA_FORWARD_OFFSET_MM = 40.0
+DEPTH_CAMERA_HEIGHT_MM = 150.0
+
+
+def make_depth_scanner(room: SimulatedRoom):
+    """A closure mirroring the mission's other simulated sensors: given
+    telemetry, return the points a real depth camera would have reported
+    from that pose. `turret_deg` is included in yaw the same way it already
+    factors into the vision/localization code — the camera rides the
+    turret, so it looks wherever the turret is pointed, not just wherever
+    the chassis is facing."""
+
+    def scan(telemetry) -> list[tuple[float, float, float]]:
+        yaw_deg = telemetry.heading_deg + telemetry.turret_deg
+        yaw_rad = math.radians(yaw_deg)
+        cam_x = telemetry.x_mm + DEPTH_CAMERA_FORWARD_OFFSET_MM * math.cos(yaw_rad)
+        cam_y = telemetry.y_mm + DEPTH_CAMERA_FORWARD_OFFSET_MM * math.sin(yaw_rad)
+        return room.depth_scan(
+            cam_x,
+            cam_y,
+            DEPTH_CAMERA_HEIGHT_MM,
+            yaw_deg=yaw_deg,
+            pitch_deg=DEPTH_CAMERA_PITCH_DEG,
+            h_fov_deg=60.0,
+            v_fov_deg=45.0,
+            h_samples=14,
+            v_samples=10,
+            max_range_mm=2500.0,
+        )
+
+    return scan
+
+
 def new_grid() -> OccupancyGrid:
     # Sized to cover the room with margin on all sides, per BUILD.md's note
     # that the grid represents a bounded area — the edge of the array is a
@@ -121,7 +163,12 @@ def main() -> int:
     # over this so it always reads whichever mission is current, even after
     # SCOUT_LOOP swaps in a fresh one — a plain closure over `mission` would
     # keep calling the FIRST lap's (by-then finished, DONE-forever) mission.
-    current = {"mission": ExplorationMission(robot, new_grid(), min_frontier_cluster=2)}
+    depth_scanner = make_depth_scanner(room)
+    current = {
+        "mission": ExplorationMission(
+            robot, new_grid(), min_frontier_cluster=2, depth_scanner=depth_scanner
+        )
+    }
 
     def room_fn() -> dict:
         data = room.to_dict()
@@ -129,7 +176,11 @@ def main() -> int:
         return data
 
     dashboard = start_dashboard(
-        lambda: current["mission"].snapshot(), room_fn=room_fn, host=host, port=port
+        lambda: current["mission"].snapshot(),
+        room_fn=room_fn,
+        pointcloud_fn=lambda: current["mission"].point_cloud.to_dict(),
+        host=host,
+        port=port,
     )
     print("Scout is exploring a simulated room.")
     print(f"Open http://{host}:{port} for the 2D map, or")
@@ -156,7 +207,9 @@ def main() -> int:
 
             time.sleep(LOOP_PAUSE_S)
             robot.set_pose(0.0, 0.0, 0.0)
-            new_mission = ExplorationMission(robot, new_grid(), min_frontier_cluster=2)
+            new_mission = ExplorationMission(
+                robot, new_grid(), min_frontier_cluster=2, depth_scanner=depth_scanner
+            )
             current["mission"] = new_mission
             if mission.state == DONE:
                 print("Starting a fresh lap.\n")

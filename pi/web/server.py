@@ -7,10 +7,13 @@ stone toward, once there's a real Pi to run Mosquitto on.
 
 Serves two pages against the same live data:
 - `/` (index.html) — the 2D occupancy-grid map, polling `/state.json`.
-- `/scene.html` — a 3D view of the robot in the room, polling `/state.json`
-  and `/room.json`. See scene.html's own docstring-equivalent comment for
-  what "3D" does and doesn't mean here (ground-truth room geometry — a real
-  robot has no such oracle, only what it's actually mapped).
+- `/scene.html` — a 3D view of the robot in the room, polling `/state.json`,
+  `/room.json`, and `/pointcloud.json`. See scene.html's own docstring-
+  equivalent comment for what "3D" does and doesn't mean here: `/room.json`
+  is ground-truth geometry (a real robot has no such oracle), while
+  `/pointcloud.json` is the opposite — an honestly-earned map built from
+  repeated simulated depth scans, the same way the 2D occupancy grid is
+  built from repeated ultrasonic readings, not read from the ground truth.
 
 Both poll rather than push (~300ms) — simpler than a WebSocket, and at this
 data rate and audience (one browser tab on the same machine or LAN) there is
@@ -74,7 +77,9 @@ _SECURITY_HEADERS = {
 
 
 def make_handler(
-    snapshot_fn: Callable[[], dict], room_fn: Optional[Callable[[], dict]] = None
+    snapshot_fn: Callable[[], dict],
+    room_fn: Optional[Callable[[], dict]] = None,
+    pointcloud_fn: Optional[Callable[[], dict]] = None,
 ) -> type:
     """Build a request handler bound to the given data sources.
 
@@ -116,6 +121,11 @@ def make_handler(
                     self.send_error(404, "no room geometry configured for this session")
                 else:
                     _serve_json(self, room_fn)
+            elif self.path == "/pointcloud.json":
+                if pointcloud_fn is None:
+                    self.send_error(404, "no depth-scan point cloud configured for this session")
+                else:
+                    _serve_json(self, pointcloud_fn)
             else:
                 self.send_error(404)
 
@@ -136,6 +146,7 @@ def make_handler(
 def start(
     snapshot_fn: Callable[[], dict],
     room_fn: Optional[Callable[[], dict]] = None,
+    pointcloud_fn: Optional[Callable[[], dict]] = None,
     host: str = "127.0.0.1",
     port: int = 8080,
 ) -> ThreadingHTTPServer:
@@ -145,9 +156,15 @@ def start(
     `lambda: room.to_dict()` from sim_world.SimulatedRoom). Without it,
     scene.html still works but renders the robot with no walls around it.
 
+    `pointcloud_fn`, if given, powers `/scene.html`'s 3D depth-scan point
+    cloud (e.g. `lambda: mission.point_cloud.to_dict()`). Without it, that
+    endpoint 404s and the page simply doesn't render one.
+
     Call `.shutdown()` on the returned server to stop it.
     """
-    server = ThreadingHTTPServer((host, port), make_handler(snapshot_fn, room_fn))
+    server = ThreadingHTTPServer(
+        (host, port), make_handler(snapshot_fn, room_fn, pointcloud_fn)
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server

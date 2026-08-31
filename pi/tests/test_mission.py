@@ -252,6 +252,35 @@ def test_sweep_applies_a_localizer_correction():
         ), "the localizer's correction must have been applied via robot.set_pose"
 
 
+def test_sweep_accumulates_depth_scanner_points_into_the_point_cloud():
+    """A stand-in for a real depth scan: the depth_scanner hook is a plain
+    callable, proving the wiring (sweep -> depth_scanner -> point_cloud)
+    without needing sim_world.py's 3D geometry at all. demo_explore.py plugs
+    a real SimulatedRoom.depth_scan closure into this exact same hook.
+    """
+    room = SimulatedRoom(walls=[((2000.0, -2000.0), (2000.0, 2000.0))])
+    with Harness(room) as h:
+        grid = OccupancyGrid(width=10, height=10, cell_size_mm=100.0)
+        calls = []
+
+        def fake_depth_scanner(telemetry):
+            calls.append(telemetry.turret_deg)
+            return [(100.0, 200.0, 300.0), (100.0, 200.0, 300.0), (400.0, 0.0, 0.0)]
+
+        mission = ExplorationMission(
+            h.robot, grid, sweep_angles=(-30.0, 0.0), depth_scanner=fake_depth_scanner
+        )
+        assert len(mission.point_cloud) == 0
+
+        mission._do_sweep()
+
+        assert calls == [-30.0, 0.0], "depth_scanner must be called at every sweep stop"
+        # Each of 2 sweep stops returns 3 points, 2 of which are identical —
+        # dedup means 2 distinct points per stop, but both stops return the
+        # exact same 3 points here, so the total stays at 2 (not 4).
+        assert len(mission.point_cloud) == 2
+
+
 def test_full_mission_explores_a_small_room_and_terminates():
     # Centered on the origin, NOT anchored at a corner: the robot's odometry
     # always starts at (0, 0), and SimulatedRoom.rectangle(w, h) anchors its

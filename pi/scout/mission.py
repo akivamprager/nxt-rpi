@@ -27,6 +27,7 @@ from . import explore
 from . import protocol as p
 from .explore import Frontier
 from .mapping import OccupancyGrid
+from .pointcloud import PointCloudMap
 from .pose2d import Pose2D
 from .robot import Robot, RobotError
 
@@ -37,6 +38,14 @@ from .robot import Robot, RobotError
 #: localizer behaves exactly as before, which is what every existing test
 #: exercises. See main.py for how a real MarkerLocalizer plugs in here.
 Localizer = Callable[[float], Optional[Pose2D]]
+
+#: Called with the current telemetry after each sweep stop; returns a list
+#: of world-frame (x_mm, y_mm, z_mm) points from a depth-camera-like scan
+#: taken from there (empty if none). Same pattern as Localizer: mission.py
+#: has no dependency on sim_world.py or any particular camera geometry, only
+#: on accumulating whatever points a scan produces — see demo_explore.py for
+#: how a real (currently: simulated) depth scanner plugs in here.
+DepthScanner = Callable[[p.Telemetry], list[tuple[float, float, float]]]
 
 IDLE, SWEEPING, PLANNING, DRIVING, RECOVERING, DONE = (
     "IDLE",
@@ -76,6 +85,7 @@ class ExplorationMission:
         travel_step_mm: float = DEFAULT_TRAVEL_STEP_MM,
         min_frontier_cluster: int = 3,
         localizer: Optional[Localizer] = None,
+        depth_scanner: Optional[DepthScanner] = None,
     ) -> None:
         self.robot = robot
         self.grid = grid
@@ -83,6 +93,11 @@ class ExplorationMission:
         self.travel_step_mm = travel_step_mm
         self.min_frontier_cluster = min_frontier_cluster
         self.localizer = localizer
+        self.depth_scanner = depth_scanner
+        #: Always created (cheap when empty) so callers can read
+        #: mission.point_cloud unconditionally, whether or not a
+        #: depth_scanner is actually configured.
+        self.point_cloud = PointCloudMap()
 
         self.state = IDLE
         self._stop = threading.Event()
@@ -165,6 +180,11 @@ class ExplorationMission:
                         f"localized: corrected pose to ({corrected.x_mm:.0f}, "
                         f"{corrected.y_mm:.0f}, {corrected.heading_deg:.1f}deg)"
                     )
+
+            if self.depth_scanner is not None:
+                points = self.depth_scanner(telemetry)
+                if points:
+                    self.point_cloud.add_points(points)
         self.robot.turret_to(0.0, wait=True, timeout=5.0)
 
     # ------------------------------------------------------------- PLANNING

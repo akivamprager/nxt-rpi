@@ -93,6 +93,7 @@ class _FakeSocketForParsing:
 HANDLER = make_handler(
     snapshot_fn=lambda: {"ok": True, "n": 1},
     room_fn=lambda: {"walls": []},
+    pointcloud_fn=lambda: {"points": [[1.0, 2.0, 3.0]], "resolution_mm": 20.0},
 )
 HANDLER_NO_ROOM = make_handler(snapshot_fn=lambda: {"ok": True})
 
@@ -129,6 +130,18 @@ def test_room_json_returns_room_fn_result_when_configured():
     assert r.status == 200
     import json
     assert json.loads(r.body) == {"walls": []}
+
+
+def test_pointcloud_json_returns_pointcloud_fn_result_when_configured():
+    r = _do_request(HANDLER, "GET", "/pointcloud.json")
+    assert r.status == 200
+    import json
+    assert json.loads(r.body) == {"points": [[1.0, 2.0, 3.0]], "resolution_mm": 20.0}
+
+
+def test_pointcloud_json_404s_when_not_configured():
+    r = _do_request(HANDLER_NO_ROOM, "GET", "/pointcloud.json")
+    assert r.status == 404
 
 
 def test_room_json_404s_when_no_room_fn_configured():
