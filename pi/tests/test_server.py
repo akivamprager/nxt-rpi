@@ -93,6 +93,7 @@ class _FakeSocketForParsing:
 HANDLER = make_handler(
     snapshot_fn=lambda: {"ok": True, "n": 1},
     room_fn=lambda: {"walls": []},
+    pointcloud_fn=lambda: {"points": [[1.0, 2.0, 3.0]], "resolution_mm": 20.0},
 )
 HANDLER_NO_ROOM = make_handler(snapshot_fn=lambda: {"ok": True})
 
@@ -108,8 +109,25 @@ def test_index_serves_with_200_and_security_headers():
     assert b"<html" in r.body.lower()
 
 
+def test_root_path_serves_scene_html_not_index_html():
+    """The 3D scene is the default landing page, not the 2D map — see
+    server.py's _STATIC_PAGES. "/" and "/scene.html" must be byte-identical;
+    "/index.html" (the 2D map) must be a genuinely different file."""
+    root = _do_request(HANDLER, "GET", "/")
+    scene = _do_request(HANDLER, "GET", "/scene.html")
+    index = _do_request(HANDLER, "GET", "/index.html")
+    assert root.body == scene.body
+    assert root.body != index.body
+
+
 def test_scene_html_is_also_served():
     r = _do_request(HANDLER, "GET", "/scene.html")
+    assert r.status == 200
+    assert b"<html" in r.body.lower()
+
+
+def test_index_html_is_reachable_at_its_own_path():
+    r = _do_request(HANDLER, "GET", "/index.html")
     assert r.status == 200
     assert b"<html" in r.body.lower()
 
@@ -129,6 +147,18 @@ def test_room_json_returns_room_fn_result_when_configured():
     assert r.status == 200
     import json
     assert json.loads(r.body) == {"walls": []}
+
+
+def test_pointcloud_json_returns_pointcloud_fn_result_when_configured():
+    r = _do_request(HANDLER, "GET", "/pointcloud.json")
+    assert r.status == 200
+    import json
+    assert json.loads(r.body) == {"points": [[1.0, 2.0, 3.0]], "resolution_mm": 20.0}
+
+
+def test_pointcloud_json_404s_when_not_configured():
+    r = _do_request(HANDLER_NO_ROOM, "GET", "/pointcloud.json")
+    assert r.status == 404
 
 
 def test_room_json_404s_when_no_room_fn_configured():

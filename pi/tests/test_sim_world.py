@@ -13,7 +13,13 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "tools"))
 
-from sim_world import SimulatedRoom  # noqa: E402
+from sim_world import (  # noqa: E402
+    SIMULATED_FLOOR_COLOR,
+    SIMULATED_WALL_COLOR,
+    FurnitureBox,
+    SimulatedRoom,
+    _ray_box_distance,
+)
 
 
 def test_sense_hits_wall_straight_ahead():
@@ -119,6 +125,216 @@ def test_add_wall_creates_an_obstacle_the_ray_can_hit():
     range_cm, has_echo = room.sense(500, 500, bearing_deg=0)
     assert has_echo
     assert abs(range_cm - 40) <= 1  # 400mm to the divider, not 1500mm to the far wall
+
+
+# ------------------------------------------------------------- _cast_3d
+
+
+def test_level_ray_hits_the_wall_at_floor_height():
+    """A ray with no vertical component never leaves z=0, so it must hit the
+    wall at its very base — height 0, not the floor (dz=0 means the floor
+    branch's dz < 0 check never fires)."""
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    hit = room._cast_3d(0.0, 0.0, 0.0, dx=1.0, dy=0.0, dz=0.0, max_range_mm=1000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    assert abs(x - 100.0) < 1e-6
+    assert abs(y - 0.0) < 1e-6
+    assert abs(z - 0.0) < 1e-6
+    assert (r, g, b) == SIMULATED_WALL_COLOR
+
+
+def test_straight_down_ray_hits_the_floor():
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    # pitch -90deg: dx=cos(-90)*cos(yaw)=0, dy=0, dz=sin(-90)=-1 — straight down.
+    hit = room._cast_3d(0.0, 0.0, 500.0, dx=0.0, dy=0.0, dz=-1.0, max_range_mm=1000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    assert abs(x - 0.0) < 1e-6
+    assert abs(y - 0.0) < 1e-6
+    assert abs(z - 0.0) < 1e-6  # hit the floor exactly below the start point
+    assert (r, g, b) == SIMULATED_FLOOR_COLOR
+
+
+def test_ray_angled_up_over_the_wall_hits_nothing():
+    """Steep enough to clear the wall's height before reaching its XY line,
+    and pointing up (never crosses the floor either) — a real miss, not a
+    computation that should quietly return something anyway."""
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    pitch = math.radians(85.0)  # tan(85deg) ~= 11.4 > 900/100=9, clears the wall
+    dx, dz = math.cos(pitch), math.sin(pitch)
+    hit = room._cast_3d(0.0, 0.0, 0.0, dx=dx, dy=0.0, dz=dz, max_range_mm=5000.0)
+    assert hit is None
+
+
+def test_downward_angled_ray_hits_the_wall_at_the_hand_computed_height():
+    """A genuinely independent check: distance and height computed by hand
+    (see this test's derivation in the accompanying commit), not just
+    re-run through the same code being tested."""
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    pitch = math.radians(-10.0)
+    dx, dz = math.cos(pitch), math.sin(pitch)
+    hit = room._cast_3d(0.0, 0.0, 800.0, dx=dx, dy=0.0, dz=dz, max_range_mm=5000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    expected_t = 100.0 / dx  # solving x0 + t*dx = 100
+    expected_z = 800.0 + expected_t * dz
+    assert abs(x - 100.0) < 1e-6
+    assert abs(z - expected_z) < 1e-6
+    assert 0.0 < expected_z < 900.0, "test setup check: should land mid-wall, not at an edge"
+
+
+def test_wall_wins_over_the_floor_when_both_are_in_range():
+    """A ray that would eventually cross the (unbounded) floor plane, but
+    hits a nearer wall first, must report the wall — not the floor."""
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    pitch = math.radians(-1.0)  # barely down: floor is very far away along this ray
+    dx, dz = math.cos(pitch), math.sin(pitch)
+    hit = room._cast_3d(0.0, 0.0, 100.0, dx=dx, dy=0.0, dz=dz, max_range_mm=100000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    assert abs(x - 100.0) < 1e-6, "must have hit the wall (x=100), not sailed past to the floor"
+    assert (r, g, b) == SIMULATED_WALL_COLOR
+
+
+def test_cast_3d_respects_max_range():
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    hit = room._cast_3d(0.0, 0.0, 0.0, dx=1.0, dy=0.0, dz=0.0, max_range_mm=50.0)
+    assert hit is None  # wall is 100mm away, beyond the 50mm cap
+
+
+# ------------------------------------------------------------- depth_scan
+
+
+def test_depth_scan_sample_count_matches_h_times_v_when_everything_hits():
+    """A small box: every ray, across the whole FOV, hits either a wall or
+    the floor — nothing escapes to return None."""
+    room = SimulatedRoom.rectangle(4000, 4000, margin_mm=0.0)
+    points = room.depth_scan(
+        2000.0, 2000.0, 300.0, yaw_deg=0.0, pitch_deg=-20.0,
+        h_fov_deg=60.0, v_fov_deg=40.0, h_samples=5, v_samples=4,
+        max_range_mm=5000.0,
+    )
+    assert len(points) == 5 * 4
+
+
+def test_depth_scan_points_lie_within_the_expected_fov_cone():
+    """Every returned point's bearing (from the scan origin) must fall
+    within the requested horizontal FOV — a coarse but real geometric
+    sanity check that samples aren't leaking outside the cone."""
+    room = SimulatedRoom.rectangle(6000, 6000, margin_mm=0.0)
+    ox, oy = 3000.0, 3000.0
+    points = room.depth_scan(
+        ox, oy, 300.0, yaw_deg=0.0, pitch_deg=0.0,
+        h_fov_deg=60.0, v_fov_deg=20.0, h_samples=7, v_samples=3,
+        max_range_mm=5000.0,
+    )
+    assert len(points) > 0
+    for x, y, z, r, g, b in points:
+        bearing = math.degrees(math.atan2(y - oy, x - ox))
+        assert -30.5 <= bearing <= 30.5, f"point at bearing {bearing} escaped the +/-30deg FOV"
+
+
+def test_depth_scan_with_a_single_sample_uses_the_center_angle():
+    """h_samples=1/v_samples=1 must not divide by zero (the (n-1) in the
+    fraction calc) and must aim exactly at (yaw_deg, pitch_deg)."""
+    room = SimulatedRoom(walls=[((100.0, -1000.0), (100.0, 1000.0))], wall_height_mm=900.0)
+    points = room.depth_scan(
+        0.0, 0.0, 0.0, yaw_deg=0.0, pitch_deg=0.0,
+        h_fov_deg=60.0, v_fov_deg=40.0, h_samples=1, v_samples=1,
+        max_range_mm=1000.0,
+    )
+    assert len(points) == 1
+    x, y, z, r, g, b = points[0]
+    assert abs(x - 100.0) < 1e-6
+    assert abs(y - 0.0) < 1e-6
+    assert (r, g, b) == SIMULATED_WALL_COLOR  # level ray at z=0 hits the wall, not the floor
+
+
+def test_depth_scan_colors_wall_and_floor_hits_differently():
+    """A wide-enough vertical FOV should pick up both a wall (level rays)
+    and the floor (downward-angled rays) in the same scan, each carrying
+    its own synthetic colour — see SIMULATED_WALL_COLOR/SIMULATED_FLOOR_COLOR."""
+    room = SimulatedRoom(walls=[((300.0, -1000.0), (300.0, 1000.0))], wall_height_mm=900.0)
+    points = room.depth_scan(
+        0.0, 0.0, 150.0, yaw_deg=0.0, pitch_deg=-20.0,
+        h_fov_deg=10.0, v_fov_deg=80.0, h_samples=2, v_samples=9,
+        max_range_mm=2000.0,
+    )
+    colors = {(r, g, b) for _, _, _, r, g, b in points}
+    assert SIMULATED_WALL_COLOR in colors
+    assert SIMULATED_FLOOR_COLOR in colors
+
+
+# ------------------------------------------------------------ _ray_box_distance
+
+_TEST_BOX = FurnitureBox.centered(
+    x_center=150.0, y_center=0.0, width_x_mm=100.0, depth_y_mm=100.0,
+    height_mm=100.0, color=(1, 2, 3),
+)  # x:[100,200] y:[-50,50] z:[0,100]
+
+
+def test_ray_box_distance_hits_the_near_face():
+    t = _ray_box_distance(0.0, 0.0, 50.0, dx=1.0, dy=0.0, dz=0.0, box=_TEST_BOX)
+    assert t is not None
+    assert abs(t - 100.0) < 1e-9
+
+
+def test_ray_box_distance_misses_a_box_off_to_the_side():
+    t = _ray_box_distance(0.0, 200.0, 50.0, dx=1.0, dy=0.0, dz=0.0, box=_TEST_BOX)
+    assert t is None
+
+
+def test_ray_box_distance_box_entirely_behind_the_ray_is_a_miss():
+    t = _ray_box_distance(300.0, 0.0, 50.0, dx=1.0, dy=0.0, dz=0.0, box=_TEST_BOX)
+    assert t is None
+
+
+def test_ray_box_distance_ray_origin_inside_the_box_returns_the_exit_point():
+    """Standard slab-method behaviour for a ray starting inside a solid:
+    t_min comes out negative (the "entry" is behind the origin, since the
+    origin is already past it), so the exit point (t_max) is the nearest
+    non-negative crossing — the well-known algorithm's own behaviour, not
+    an invented special case, but worth a test making it explicit rather
+    than surprising."""
+    t = _ray_box_distance(150.0, 0.0, 50.0, dx=1.0, dy=0.0, dz=0.0, box=_TEST_BOX)
+    assert t is not None
+    assert abs(t - 50.0) < 1e-9  # exits at x=200, 50mm from the origin at x=150
+
+
+# ------------------------------------------------------- furniture in _cast_3d
+
+
+def test_cast_3d_furniture_wins_over_a_more_distant_wall():
+    room = SimulatedRoom(walls=[((1000.0, -1000.0), (1000.0, 1000.0))], wall_height_mm=900.0)
+    room.add_furniture(300.0, 0.0, 100.0, 100.0, 200.0, color=(9, 9, 9))
+    hit = room._cast_3d(0.0, 0.0, 50.0, dx=1.0, dy=0.0, dz=0.0, max_range_mm=5000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    assert abs(x - 250.0) < 1e-9  # near face of the furniture box, not the wall at x=1000
+    assert (r, g, b) == (9, 9, 9)
+
+
+def test_cast_3d_wall_wins_over_more_distant_furniture():
+    room = SimulatedRoom(walls=[((150.0, -1000.0), (150.0, 1000.0))], wall_height_mm=900.0)
+    room.add_furniture(1000.0, 0.0, 100.0, 100.0, 200.0, color=(9, 9, 9))
+    hit = room._cast_3d(0.0, 0.0, 50.0, dx=1.0, dy=0.0, dz=0.0, max_range_mm=5000.0)
+    assert hit is not None
+    x, y, z, r, g, b = hit
+    assert abs(x - 150.0) < 1e-9
+    assert (r, g, b) == SIMULATED_WALL_COLOR
+
+
+def test_depth_scan_picks_up_furniture_color():
+    room = SimulatedRoom(walls=[((2000.0, -2000.0), (2000.0, 2000.0))])
+    room.add_furniture(500.0, 0.0, 200.0, 200.0, 300.0, color=(9, 9, 9))
+    points = room.depth_scan(
+        0.0, 0.0, 150.0, yaw_deg=0.0, pitch_deg=0.0,
+        h_fov_deg=10.0, v_fov_deg=10.0, h_samples=3, v_samples=3,
+        max_range_mm=2000.0,
+    )
+    colors = {(r, g, b) for _, _, _, r, g, b in points}
+    assert (9, 9, 9) in colors
 
 
 if __name__ == "__main__":

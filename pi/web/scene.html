@@ -55,7 +55,7 @@
     font-size: 11px; pointer-events: none;
   }
   #note {
-    position: absolute; top: 10px; left: 14px; right: 14px; color: #6a7078;
+    position: absolute; top: 10px; left: 50px; right: 14px; color: #6a7078;
     font-size: 11px; pointer-events: none; max-width: 480px;
   }
   #zoomControls {
@@ -89,6 +89,52 @@
   #povToggle:hover { color: #9fd0ff; }
   #povPanel.collapsed #povCanvas, #povPanel.collapsed #povReadout { display: none; }
 
+  #helpButton {
+    position: absolute; top: 10px; left: 14px; z-index: 15;
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid #3a3f47;
+    background: #1c2027cc; color: #cfd6de; font-size: 13px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  #helpButton:hover { background: #262b33ee; border-color: #4a5058; }
+
+  #onboardingOverlay {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: #05070acc; backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; padding: 20px;
+    box-sizing: border-box;
+  }
+  #onboardingOverlay.open { display: flex; }
+  #onboardingModal {
+    background: #12151a; border: 1px solid #2a2e35; border-radius: 12px;
+    max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto;
+    padding: 20px 24px; box-sizing: border-box;
+  }
+  #onboardingModal h2 {
+    margin: 0 0 8px; font-size: 17px; color: #9fd0ff; letter-spacing: 0.01em;
+  }
+  #onboardingModal p { margin: 8px 0; color: #cfd6de; font-size: 13px; line-height: 1.5; }
+  #onboardingModal ul { margin: 8px 0; padding-left: 0; list-style: none; }
+  #onboardingModal li {
+    display: flex; gap: 10px; margin: 8px 0; font-size: 13px;
+    color: #cfd6de; line-height: 1.4; align-items: baseline;
+  }
+  #onboardingModal .key {
+    flex-shrink: 0; min-width: 28px; text-align: center; color: #9fd0ff;
+    background: #1c2027; border: 1px solid #2a2e35; border-radius: 6px;
+    padding: 2px 6px; font-size: 12px;
+  }
+  #onboardingModal .note {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid #2a2e35;
+    color: #8a8f98; font-size: 12px; line-height: 1.5;
+  }
+  #onboardingClose {
+    display: block; width: 100%; margin-top: 16px; padding: 10px;
+    border-radius: 8px; border: 1px solid #3a3f47; background: #1c2027;
+    color: #cfd6de; font-size: 13px; cursor: pointer;
+  }
+  #onboardingClose:hover { background: #262b33; border-color: #4a5058; }
+
   /* Phones and small tablets: the sidebar becomes an on-demand overlay
      drawer instead of a permanent side column, so the 3D view gets the
      full screen — the more important thing to see on a small display. */
@@ -110,6 +156,10 @@
     #zoomControls button { width: 44px; height: 44px; font-size: 22px; }
     #povPanel { width: min(220px, 55vw); top: 60px; }
     #povCanvas { height: 110px; }
+    /* #sidebarToggle occupies this same top-left corner at mobile widths
+       (see its own rule above) — shift the help button clear of it rather
+       than overlapping. */
+    #helpButton { top: 12px; left: 64px; width: 40px; height: 40px; font-size: 15px; }
     #note { display: none; } /* the ground-truth caveat is nice-to-have, not essential on a phone */
   }
 </style>
@@ -118,12 +168,41 @@
 <div id="layout">
   <div id="scenePane">
     <div id="note">Room walls shown here are ground truth from the simulator — a real
-      robot has no such view, only what it has actually mapped (see the 2D map).</div>
+      robot has no such view. The coloured points/mesh are the honest part: an earned
+      3D reconstruction built from repeated simulated depth-camera scans, the same way
+      the 2D map is built from repeated ultrasonic readings.</div>
     <div id="hint">drag to orbit · pinch/scroll to zoom · two-finger drag to pan</div>
     <button id="sidebarToggle" title="Show info">&#9776;</button>
+    <button id="helpButton" title="What is this? / what do the buttons do?">?</button>
     <div id="zoomControls">
       <button id="zoomIn" title="Zoom in">+</button>
       <button id="zoomOut" title="Zoom out">&minus;</button>
+      <button id="meshToggle" title="Toggle point cloud / live mesh">&#9670;</button>
+      <button id="roomToggle" title="Toggle ground-truth room / earned reconstruction">&#8862;</button>
+    </div>
+    <div id="onboardingOverlay">
+      <div id="onboardingModal">
+        <h2>Welcome to Scout's 3D demo</h2>
+        <p>This is a real robot exploration mission — the exact same Python code that will
+          drive the physical robot is running right now, controlling a simulated NXT +
+          Raspberry Pi in a simulated room. Nothing here is a mockup or a canned animation.</p>
+        <ul>
+          <li><span class="key">drag</span> Orbit the 3D view. Pinch or scroll to zoom, two-finger drag to pan.</li>
+          <li><span class="key">+ &minus;</span> Zoom buttons — same as pinch/scroll, for when that's awkward.</li>
+          <li><span class="key">&#9670;</span> Switch between the point-cloud dots and a live triangulated
+            mesh, both rebuilt from the robot's own scans as it explores.</li>
+          <li><span class="key">&#8862;</span> Cycle what's shown: ground-truth room + reconstruction together,
+            the earned reconstruction alone, or the ground-truth room alone.</li>
+          <li><span class="key">POV</span> The small panel top-right shows exactly what the robot's own
+            camera sees right now — click "hide" to collapse it.</li>
+          <li><span class="key">&#9776;</span> On a phone, opens the stats panel (state, coverage, pose, etc).</li>
+        </ul>
+        <p class="note">The ground-truth room/walls are shown for a visually complete demo — a
+          real robot has no such oracle. Everything colored (points, mesh) is <em>earned</em>:
+          built only from what the robot's simulated depth camera actually scanned, the same
+          honesty the 2D occupancy map already has.</p>
+        <button id="onboardingClose">Got it</button>
+      </div>
     </div>
     <div id="povPanel">
       <div id="povHeader">
@@ -137,11 +216,12 @@
     </div>
   </div>
   <div id="sidebar">
-    <div id="nav"><a href="/">2D map</a><span>·</span><a class="active" href="/scene.html">3D scene</a></div>
+    <div id="nav"><a href="/index.html">2D map</a><span>·</span><a class="active" href="/scene.html">3D scene</a></div>
     <h1>SCOUT — 3D SCENE</h1>
     <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
     <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
     <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label">cloud pts</span><span id="cloudPoints" class="value">—</span></div>
     <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
     <div class="row"><span class="label">turret</span><span id="turret" class="value">—</span></div>
     <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
@@ -172,6 +252,7 @@
 // before the import map was added.
 import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import { MarchingCubes } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/objects/MarchingCubes.js";
 
 // ---------------------------------------------------------------- constants
 //
@@ -201,6 +282,13 @@ const BRACKET_TILT = THREE.MathUtils.degToRad(35);
 // map's own arrow before trusting this comment over the code.
 function worldToScene(x_mm, y_mm) {
   return [x_mm * MM, -y_mm * MM];
+}
+
+// Same convention as worldToScene, extended with height: world z_mm (up)
+// maps straight onto scene Y (also up) — no sign flip needed there, only
+// on the floor-plane y_mm -> scene Z axis.
+function pointToScene(x_mm, y_mm, z_mm) {
+  return [x_mm * MM, z_mm * MM, -y_mm * MM];
 }
 
 // -------------------------------------------------------------------- setup
@@ -248,6 +336,44 @@ const sidebarEl = document.getElementById("sidebar");
 document.getElementById("sidebarToggle").addEventListener("click", () => {
   sidebarEl.classList.toggle("open");
 });
+
+// First-visit onboarding — explains what the demo is and what each button
+// does (see the modal's own content). Shown automatically once per
+// browser (localStorage), and reachable anytime after via the "?" button
+// — a first-time explanation that can never be found again isn't much of
+// one. localStorage is wrapped in try/catch: private-browsing modes throw
+// on access in some browsers, and "onboarding shows every time" is a far
+// better failure mode there than a crashed page.
+const ONBOARDING_SEEN_KEY = "scout_onboarding_seen_v1";
+const onboardingOverlay = document.getElementById("onboardingOverlay");
+
+function openOnboarding() {
+  onboardingOverlay.classList.add("open");
+}
+function closeOnboarding() {
+  onboardingOverlay.classList.remove("open");
+  try {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+  } catch (err) {
+    // Private browsing or similar — fine, it just shows again next visit.
+  }
+}
+document.getElementById("helpButton").addEventListener("click", openOnboarding);
+document.getElementById("onboardingClose").addEventListener("click", closeOnboarding);
+onboardingOverlay.addEventListener("click", (event) => {
+  if (event.target === onboardingOverlay) closeOnboarding(); // click on the backdrop, not the card
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && onboardingOverlay.classList.contains("open")) closeOnboarding();
+});
+
+let alreadySeenOnboarding = false;
+try {
+  alreadySeenOnboarding = localStorage.getItem(ONBOARDING_SEEN_KEY) === "1";
+} catch (err) {
+  // Treat an inaccessible localStorage as "never seen" — see the note above.
+}
+if (!alreadySeenOnboarding) openOnboarding();
 
 function resize() {
   const w = pane.clientWidth, h = pane.clientHeight;
@@ -311,6 +437,244 @@ const sensorRay = new THREE.Line(
 );
 sensorRay.frustumCulled = false;
 scene.add(sensorRay);
+
+// The earned 3D point cloud (see /pointcloud.json and pointcloud.py) — an
+// empty BufferGeometry to start, its position/color attributes replaced
+// wholesale each time loadPointCloud() polls, same pattern as the room/
+// robot below. vertexColors: true means each point renders its own real
+// sampled colour (or sim_world.py's fixed placeholder grey in simulation)
+// rather than one flat tint for the whole cloud.
+const pointCloud = new THREE.Points(
+  new THREE.BufferGeometry(),
+  new THREE.PointsMaterial({ size: 0.02, sizeAttenuation: true, vertexColors: true })
+);
+pointCloud.frustumCulled = false;
+scene.add(pointCloud);
+
+// A live, entirely client-side mesh reconstruction of the same point cloud
+// — the in-browser counterpart to mesh_reconstruct.py's offline Open3D/
+// Poisson pipeline. THREE's MarchingCubes addon builds a triangle mesh
+// from a scalar density field; loadPointCloud() below "splats" each point
+// into that field as a small ball of density (addBall), so overlapping
+// nearby points (e.g. many hits along the same wall) merge into one
+// continuous surface, the same idea as mesh_reconstruct.py's voxel-grid
+// occupancy approach, just running on the GPU/CPU here instead of scipy.
+//
+// Cruder than the offline Poisson mesh (fixed grid resolution, no normal
+// estimation) but updates every few seconds as the robot scans, with zero
+// server round-trip — see mesh_reconstruct.py's own docstring for the
+// higher-quality, run-when-you-want-it offline alternative.
+// Cost scales with the CUBE of this (both the field array and the BFS
+// dilation below touch every voxel near a point), so this is a genuine
+// quality/rebuild-speed trade-off, not a free upgrade — 64 chosen as a
+// step up from the first working version (48) worth checking live, not
+// pushed further without confirming it still rebuilds smoothly.
+const MESH_RESOLUTION = 64;
+const meshMaterial = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 0.8, side: THREE.DoubleSide,
+});
+// maxVertexCount raised alongside MESH_RESOLUTION: triangle count scales
+// with surface area (~resolution^2), and the previous 65536 cap was sized
+// for resolution 48 — keeping it unchanged at a higher resolution risks
+// silently clipping the mesh once a scan covers enough surface.
+const liveMesh = new MarchingCubes(MESH_RESOLUTION, meshMaterial, false, true, 150000);
+liveMesh.castShadow = true;
+liveMesh.receiveShadow = true;
+liveMesh.visible = false;
+scene.add(liveMesh);
+
+let showMesh = false;
+let latestPoints = [];
+
+// Two independent axes, both applied together by applyVisibility():
+// showMesh picks WHICH FORM the earned reconstruction takes (dots vs
+// live-triangulated mesh); roomVisibilityMode picks WHETHER the ground-
+// truth simulated room (walls/furniture — a real robot has no such
+// oracle, see the on-page note) shows alongside it, replaces it, or is
+// replaced by it. roomGroup gets reassigned once by loadRoom() below
+// (async, so it may finish after this runs first) — applyVisibility() is
+// called again there for exactly that reason.
+const ROOM_VISIBILITY_MODES = ["both", "reconstruction", "room"];
+let roomVisibilityMode = "both";
+
+function applyVisibility() {
+  roomGroup.visible = roomVisibilityMode !== "reconstruction";
+  const reconstructionVisible = roomVisibilityMode !== "room";
+  liveMesh.visible = reconstructionVisible && showMesh;
+  pointCloud.visible = reconstructionVisible && !showMesh;
+}
+
+function setMeshVisible(visible) {
+  showMesh = visible;
+  applyVisibility();
+  if (visible) rebuildMesh(latestPoints); // don't wait for the next poll tick
+}
+document.getElementById("meshToggle").addEventListener("click", () => setMeshVisible(!showMesh));
+
+const roomToggleButton = document.getElementById("roomToggle");
+const ROOM_TOGGLE_TITLES = {
+  both: "Showing ground-truth room + earned reconstruction — click for reconstruction only",
+  reconstruction: "Showing earned reconstruction only — click for ground-truth room only",
+  room: "Showing ground-truth room only — click to show both",
+};
+function setRoomVisibilityMode(mode) {
+  roomVisibilityMode = mode;
+  roomToggleButton.title = ROOM_TOGGLE_TITLES[mode];
+  applyVisibility();
+}
+roomToggleButton.addEventListener("click", () => {
+  const next = ROOM_VISIBILITY_MODES[
+    (ROOM_VISIBILITY_MODES.indexOf(roomVisibilityMode) + 1) % ROOM_VISIBILITY_MODES.length
+  ];
+  setRoomVisibilityMode(next);
+});
+roomToggleButton.title = ROOM_TOGGLE_TITLES[roomVisibilityMode]; // initial label only
+// applyVisibility() itself is NOT called here: it touches `roomGroup`,
+// declared much further down this script (`let roomGroup = new
+// THREE.Group()`), and calling it this early would hit that `let`'s
+// temporal dead zone. See the actual initial call next to that
+// declaration instead.
+
+// Caps how many points feed one mesh rebuild — real per-point cost (grid
+// index + dilation neighbours, see below), and PointCloudMap's cloud can
+// grow into the thousands. Subsampling keeps rebuilds responsive; the
+// point-cloud dots view still shows every point, this cap only affects the
+// coarser mesh reconstruction.
+const MESH_MAX_POINTS = 6000;
+
+// field[i] < isolation (80.0, MarchingCubes' default) counts as "inside"
+// the surface. addBall's metaball falloff (this file's first attempt) was
+// a poor fit for splatting thousands of individual points rather than a
+// handful of big blobs — confirmed live (chunky detached spikes spilling
+// outside the room). A single hard-edged occupied/empty voxel shell (the
+// second attempt, direct field writes with one dilation pass) turned out
+// to be its own dead end for the same underlying reason: marching cubes
+// wants a smoothly-varying scalar field, and a shell that's only 1-2
+// voxels thick with hard 0/200 jumps between occupied and empty produces
+// a jagged, spiky isosurface at every irregular protrusion — also
+// confirmed live, not assumed. RING_VALUES below fixes this by giving
+// each point a smooth multi-voxel falloff instead of a hard edge (see the
+// BFS below) — a cheap approximate signed-distance field, close enough
+// for this purpose without a real distance-transform library.
+const OUTSIDE_VALUE = 200.0;
+// Fewer rings = thinner (less fattening of thin real features like walls/
+// furniture edges) but risks visible gaps between points that didn't land
+// in adjacent voxels; more rings = better-connected but fatter (each ring
+// adds roughly one voxel's worth of thickness on EVERY side of a real
+// surface, so this is a real, unavoidable trade-off at a fixed grid
+// resolution, not a bug to fully eliminate — MESH_RESOLUTION would need
+// to go up, at a real rebuild-cost trade-off, for genuinely thin walls).
+// One ring: confirmed live to fatten a real wall/furniture edge by roughly
+// one voxel's width (~span/MESH_RESOLUTION, tens of mm) on each side,
+// clearly thinner than the previous 4-ring version's ~3-voxel bloat.
+const RING_VALUES = [0.0, 40.0]; // ring 0 = the point itself
+// 6-connected face neighbours — the BFS below expands outward through
+// these each ring, the same connectivity mesh_reconstruct.py's single
+// binary_dilation pass used, just repeated with a growing field value
+// instead of one hard on/off step.
+const NEIGHBOR_OFFSETS = [
+  [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+];
+
+function rebuildMesh(points) {
+  if (points.length < 4) {
+    liveMesh.reset();
+    liveMesh.update();
+    return;
+  }
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  const sceneCoords = [];
+  for (const [x, y, z, r, g, b] of points) {
+    const [sx, sy, sz] = pointToScene(x, y, z);
+    sceneCoords.push([sx, sy, sz, r, g, b]);
+    minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+    minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+    minZ = Math.min(minZ, sz); maxZ = Math.max(maxZ, sz);
+  }
+  // Pad the bounding box so points right at the edge still have a full
+  // voxel neighbourhood, rather than getting clipped at the boundary.
+  const padX = Math.max((maxX - minX) * 0.1, 0.15);
+  const padY = Math.max((maxY - minY) * 0.1, 0.15);
+  const padZ = Math.max((maxZ - minZ) * 0.1, 0.15);
+  minX -= padX; maxX += padX; minY -= padY; maxY += padY; minZ -= padZ; maxZ += padZ;
+  const spanX = Math.max(maxX - minX, 0.01);
+  const spanY = Math.max(maxY - minY, 0.01);
+  const spanZ = Math.max(maxZ - minZ, 0.01);
+
+  // MarchingCubes' generated geometry spans local space [-1, 1] on each
+  // axis (confirmed against the library's own polygonize() source, not
+  // assumed — an earlier [0,1] assumption here was exactly wrong, and
+  // exactly explains a live-tested "walls too wide and offset" symptom: a
+  // scale of spanX (instead of spanX/2) stretches everything to 2x the
+  // intended size around the correctly-placed centre, which both fattens
+  // every feature AND pushes off-centre content further from where it
+  // should be). Grid indices below still range over the FULL [0, size-1]
+  // span — the library's own internal (x - halfsize) / halfsize remaps
+  // that to local [-1, 1] correctly on its own; only this external
+  // position/scale (mapping the OBJECT's local [-1,1] cube onto world
+  // space) needed correcting.
+  liveMesh.position.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+  liveMesh.scale.set(spanX / 2, spanY / 2, spanZ / 2);
+
+  liveMesh.reset();
+  const size = MESH_RESOLUTION, size2 = size * size, size3 = size2 * size;
+  const field = liveMesh.field, palette = liveMesh.palette;
+  field.fill(OUTSIDE_VALUE);
+  // -1 = not yet reached by the BFS below. Separate from `field` itself so
+  // "already visited at ring 0" and "field happens to equal 0.0" can never
+  // be confused (RING_VALUES[0] is 0.0, same value INSIDE_VALUE used to be).
+  const ringOf = new Int8Array(size3).fill(-1);
+
+  const step = Math.max(1, Math.floor(sceneCoords.length / MESH_MAX_POINTS));
+  let frontier = [];
+  for (let i = 0; i < sceneCoords.length; i += step) {
+    const [sx, sy, sz, r, g, b] = sceneCoords[i];
+    const ix = Math.min(size - 1, Math.max(0, Math.round(((sx - minX) / spanX) * (size - 1))));
+    const iy = Math.min(size - 1, Math.max(0, Math.round(((sy - minY) / spanY) * (size - 1))));
+    const iz = Math.min(size - 1, Math.max(0, Math.round(((sz - minZ) / spanZ) * (size - 1))));
+    const idx = size2 * iz + size * iy + ix;
+    if (ringOf[idx] !== -1) continue; // another point already seeded this cell
+    ringOf[idx] = 0;
+    field[idx] = RING_VALUES[0];
+    palette[idx * 3] = r / 255;
+    palette[idx * 3 + 1] = g / 255;
+    palette[idx * 3 + 2] = b / 255;
+    frontier.push(idx);
+  }
+
+  // Multi-source BFS: every seed point expands outward simultaneously,
+  // each ring getting a higher (but still "inside") field value than the
+  // last — see RING_VALUES. A cell reachable from two different points
+  // takes whichever ring reaches it FIRST (standard BFS correctness), so
+  // overlapping regions between nearby points get the nearer point's
+  // colour and the smoothly-blended field value between them, which is
+  // exactly the "points close together merge into one surface" behaviour
+  // this whole reconstruction needs.
+  for (let ring = 0; ring < RING_VALUES.length - 1 && frontier.length > 0; ring++) {
+    const nextFrontier = [];
+    for (const idx of frontier) {
+      const z = Math.floor(idx / size2);
+      const rem = idx % size2;
+      const y = Math.floor(rem / size);
+      const x = rem % size;
+      const cr = palette[idx * 3], cg = palette[idx * 3 + 1], cb = palette[idx * 3 + 2];
+      for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        if (nx < 0 || nx >= size || ny < 0 || ny >= size || nz < 0 || nz >= size) continue;
+        const nidx = size2 * nz + size * ny + nx;
+        if (ringOf[nidx] !== -1) continue; // reached at an equal-or-nearer ring already
+        ringOf[nidx] = ring + 1;
+        field[nidx] = RING_VALUES[ring + 1];
+        palette[nidx * 3] = cr; palette[nidx * 3 + 1] = cg; palette[nidx * 3 + 2] = cb;
+        nextFrontier.push(nidx);
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  liveMesh.update();
+}
 
 scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x2a2416, 1.2));
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.8);
@@ -596,6 +960,7 @@ const WALL_HEIGHT = 0.9, WALL_THICKNESS = 0.03;
 const BASEBOARD_H = 0.035;
 let roomGroup = new THREE.Group();
 scene.add(roomGroup);
+applyVisibility(); // safe now that roomGroup exists — see its own declaration site
 
 const wallMat = new THREE.MeshStandardMaterial({ color: 0xe4ddd0, roughness: 0.92 });
 const baseboardMat = new THREE.MeshStandardMaterial({ color: 0xf3f1ea, roughness: 0.6 });
@@ -822,6 +1187,7 @@ async function loadRoom() {
     roomGroup = buildRoom(walls);
     roomGroup.add(furnish(walls));
     scene.add(roomGroup);
+    applyVisibility(); // re-apply: the group above is a fresh object, .visible reset to default
 
     if (data.robot) {
       // Rebuild with the real wheel size/spacing from config.yaml (or the
@@ -902,6 +1268,46 @@ async function poll() {
 }
 setInterval(poll, 300);
 poll();
+
+async function loadPointCloud() {
+  try {
+    const res = await fetch("/pointcloud.json", { cache: "no-store" });
+    if (!res.ok) return; // no depth-scanner configured for this session
+    const data = await res.json();
+    const points = data.points || [];
+    latestPoints = points;
+    document.getElementById("cloudPoints").textContent = points.length;
+
+    const positions = new Float32Array(points.length * 3);
+    const colors = new Float32Array(points.length * 3);
+    for (let i = 0; i < points.length; i++) {
+      const [x, y, z, r, g, b] = points[i];
+      const [sx, sy, sz] = pointToScene(x, y, z);
+      positions[i * 3] = sx;
+      positions[i * 3 + 1] = sy;
+      positions[i * 3 + 2] = sz;
+      // THREE.PointsMaterial's vertexColors expects linear 0-1 floats, not
+      // 0-255 sRGB bytes — /255 alone (no gamma correction) is the same
+      // approximation THREE's own vertex-color examples use for this.
+      colors[i * 3] = r / 255;
+      colors[i * 3 + 1] = g / 255;
+      colors[i * 3 + 2] = b / 255;
+    }
+    pointCloud.geometry.dispose();
+    pointCloud.geometry = new THREE.BufferGeometry();
+    pointCloud.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    pointCloud.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    if (showMesh) rebuildMesh(points);
+  } catch (err) {
+    // No point cloud for this session — leave whatever was last rendered.
+  }
+}
+// Slower than the pose/sensor poll: the cloud only grows monotonically
+// within a lap (see PointCloudMap's dedup) rather than changing every
+// telemetry tick, so there's nothing to gain from polling it that often.
+setInterval(loadPointCloud, 1000);
+loadPointCloud();
 
 function animate() {
   requestAnimationFrame(animate);

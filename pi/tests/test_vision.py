@@ -163,6 +163,84 @@ def test_end_to_end_localization_through_a_real_rendered_image():
     )
 
 
+# ---------------------------------------------------------- make_localizer
+
+
+def _synthesize_canvas(pose_in_camera: Pose2D, marker_id: int = 0) -> np.ndarray:
+    """The canvas-building half of _synthesize_detection, split out so
+    make_localizer's tests can feed it directly as a fake capture_frame_gray
+    return value rather than going through detect() themselves."""
+    import cv2
+
+    detector = vision.ArucoDetector(INTRINSICS, MARKER_SIZE_MM)
+    rvec, tvec = vision.pose_to_rvec_tvec(pose_in_camera)
+    image_points, _ = cv2.projectPoints(
+        detector._object_points, rvec, tvec, CAMERA_MATRIX, DIST_COEFFS
+    )
+    marker_img = vision.generate_marker_image(marker_id=marker_id, pixels=300)
+
+    dst = image_points.reshape(4, 2).astype(np.float32)
+    src = np.array([[0, 0], [300, 0], [300, 300], [0, 300]], dtype=np.float32)
+    homography = cv2.getPerspectiveTransform(src, dst)
+    canvas = np.full((480, 640), 255, dtype=np.uint8)
+    warped = cv2.warpPerspective(marker_img, homography, (640, 480), borderValue=255)
+    mask = cv2.warpPerspective(
+        np.full((300, 300), 255, dtype=np.uint8), homography, (640, 480), borderValue=0
+    )
+    return np.where(mask > 0, warped, canvas)
+
+
+def test_make_localizer_corrects_pose_from_a_known_marker():
+    """End-to-end through the real composition make_localizer builds, not
+    just the pieces in isolation — mirrors
+    test_end_to_end_localization_through_a_real_rendered_image, but driven
+    through the actual hook mission.py calls."""
+    chassis_world = Pose2D(0.0, 0.0, 0.0)
+    marker_world = Pose2D(1200.0, 300.0, -140.0)
+    expected_in_camera = marker_in_camera_from_chassis(
+        chassis_world, marker_world, 0.0, ZERO_GEOMETRY
+    )
+    canvas = _synthesize_canvas(expected_in_camera)
+
+    detector = vision.ArucoDetector(INTRINSICS, MARKER_SIZE_MM)
+    localizer = vision.make_localizer(
+        lambda: canvas, detector, {0: marker_world}, ZERO_GEOMETRY
+    )
+
+    corrected = localizer(0.0)
+    assert corrected is not None
+    assert approx_equal(corrected, chassis_world, tol_mm=40.0, tol_deg=2.0), (
+        f"expected ~{chassis_world}, got {corrected}"
+    )
+
+
+def test_make_localizer_returns_none_when_nothing_is_detected():
+    blank = np.full((480, 640), 255, dtype=np.uint8)
+    detector = vision.ArucoDetector(INTRINSICS, MARKER_SIZE_MM)
+    localizer = vision.make_localizer(
+        lambda: blank, detector, {0: Pose2D(0, 0, 0)}, ZERO_GEOMETRY
+    )
+    assert localizer(0.0) is None
+
+
+def test_make_localizer_ignores_an_unsurveyed_marker_id():
+    """A marker that's physically in frame but not in config.yaml's markers
+    list (not yet surveyed, or a stray marker) must not crash or produce a
+    bogus correction — just no correction this sweep."""
+    marker_world = Pose2D(1200.0, 300.0, -140.0)
+    expected_in_camera = marker_in_camera_from_chassis(
+        Pose2D(0, 0, 0), marker_world, 0.0, ZERO_GEOMETRY
+    )
+    canvas = _synthesize_canvas(expected_in_camera, marker_id=5)
+
+    detector = vision.ArucoDetector(INTRINSICS, MARKER_SIZE_MM)
+    # Note: marker id 5 is detected, but only id 0 is "known"/surveyed here.
+    localizer = vision.make_localizer(
+        lambda: canvas, detector, {0: marker_world}, ZERO_GEOMETRY
+    )
+    assert localizer(0.0) is None
+
+
 # ------------------------------------------------------------- intrinsics
 
 
