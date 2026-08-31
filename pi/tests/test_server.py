@@ -185,7 +185,45 @@ def test_post_to_a_page_path_is_rejected():
     assert r.status == 404
 
 
-def test_reconstruct_mesh_404s_when_not_configured():
+def test_capabilities_json_reports_what_is_configured():
+    import json
+
+    r = _do_request(HANDLER, "GET", "/capabilities.json")
+    assert r.status == 200
+    data = json.loads(r.body)
+    assert data == {"mesh_reconstruct_available": False, "reset_available": False}
+
+
+def test_capabilities_json_reflects_configured_features():
+    import json
+
+    handler = make_handler(
+        snapshot_fn=lambda: {"ok": True},
+        mesh_reconstruct_python="/usr/bin/python3",
+        reset_fn=lambda: None,
+    )
+    r = _do_request(handler, "GET", "/capabilities.json")
+    data = json.loads(r.body)
+    assert data == {"mesh_reconstruct_available": True, "reset_available": True}
+
+
+def test_reset_mission_503s_when_not_configured():
+    r = _do_request(HANDLER, "POST", "/reset_mission")
+    assert r.status == 503
+
+
+def test_reset_mission_calls_reset_fn_and_acks():
+    import json
+
+    calls = []
+    handler = make_handler(snapshot_fn=lambda: {"ok": True}, reset_fn=lambda: calls.append(1))
+    r = _do_request(handler, "POST", "/reset_mission")
+    assert r.status == 200
+    assert json.loads(r.body) == {"ok": True}
+    assert calls == [1]
+
+
+def test_reconstruct_mesh_503s_when_not_configured():
     """Without mesh_reconstruct_python configured, this endpoint doesn't
     exist (see server.py's docstring on POST /reconstruct_mesh) — the
     default HANDLER fixture has no mesh_reconstruct_python, so this should

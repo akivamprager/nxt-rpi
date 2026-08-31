@@ -90,6 +90,7 @@ def make_handler(
     pointcloud_fn: Optional[Callable[[], dict]] = None,
     port: int = 8080,
     mesh_reconstruct_python: Optional[str] = None,
+    reset_fn: Optional[Callable[[], None]] = None,
 ) -> type:
     """Build a request handler bound to the given data sources.
 
@@ -150,14 +151,41 @@ def make_handler(
                     self.send_error(404, "no depth-scan point cloud configured for this session")
                 else:
                     _serve_json(self, pointcloud_fn)
+            elif self.path == "/capabilities.json":
+                _serve_json(self, lambda: {
+                    "mesh_reconstruct_available": mesh_reconstruct_python is not None,
+                    "reset_available": reset_fn is not None,
+                })
             else:
                 self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802 - name required by BaseHTTPRequestHandler
             if self.path == "/reconstruct_mesh":
                 self._reconstruct_mesh()
+            elif self.path == "/reset_mission":
+                self._reset_mission()
             else:
                 self.send_error(404)
+
+        def _reset_mission(self) -> None:
+            """Manually restarts exploration — a fresh grid, fresh point
+            cloud, robot pose reset to the origin (see whatever `reset_fn`
+            actually does, e.g. demo_explore.py's `trigger_restart`), on
+            demand rather than waiting for SCOUT_LOOP's automatic
+            end-of-mission restart. `reset_fn` takes no arguments and
+            returns nothing — it just signals "restart," the same
+            fire-and-forget shape as a physical reset button."""
+            if reset_fn is None:
+                _send_plain_error(self, 503, "reset isn't available on this server")
+                return
+            reset_fn()
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            _send_security_headers(self)
+            self.end_headers()
+            self.wfile.write(body)
 
         def _reconstruct_mesh(self) -> None:
             """Shells out to mesh_reconstruct.py's offline Open3D/Poisson
@@ -242,6 +270,7 @@ def start(
     host: str = "127.0.0.1",
     port: int = 8080,
     mesh_reconstruct_python: Optional[str] = None,
+    reset_fn: Optional[Callable[[], None]] = None,
 ) -> ThreadingHTTPServer:
     """Start the dashboard on a background thread and return the server.
 
@@ -261,11 +290,20 @@ def start(
     endpoint 503s and the button surfaces a clear "not configured" message
     rather than failing silently.
 
+    `reset_fn`, if given, powers `POST /reset_mission` — scene.html's
+    "reset scan" button, letting a viewer restart exploration on demand
+    instead of only via SCOUT_LOOP's automatic end-of-mission restart.
+    Without it, that endpoint 503s the same way.
+
+    `/capabilities.json` reports whether both are configured, so the
+    dashboard can grey out a button it knows will fail rather than letting
+    someone click it first and find out.
+
     Call `.shutdown()` on the returned server to stop it.
     """
     server = ThreadingHTTPServer(
         (host, port),
-        make_handler(snapshot_fn, room_fn, pointcloud_fn, port, mesh_reconstruct_python)
+        make_handler(snapshot_fn, room_fn, pointcloud_fn, port, mesh_reconstruct_python, reset_fn)
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

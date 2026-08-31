@@ -27,7 +27,15 @@ behavior above):
                   the origin) once a mission reaches DONE, instead of
                   stopping there. A public demo that just goes still after
                   finishing is a worse demo than one that keeps exploring;
-                  local interactive use doesn't need this.
+                  local interactive use doesn't need this. Independent of
+                  the dashboard's own Reset button (POST /reset_mission,
+                  always available): that lets a viewer restart on demand
+                  at any point, not just once a mission happens to finish
+                  — the coverage % dropping suddenly on a public demo with
+                  SCOUT_LOOP set is this feature doing exactly what it's
+                  for (a fresh lap starting), not a bug, though it can look
+                  like one without the "Starting a fresh lap" log line
+                  visible.
     MESH_RECONSTRUCT_PYTHON
                   path to a Python interpreter with Open3D installed (e.g.
                   .venv-mesh/bin/python3 — see mesh_reconstruct.py's
@@ -51,7 +59,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from scout import config as cfg  # noqa: E402
 from scout.mapping import OccupancyGrid  # noqa: E402
-from scout.mission import DONE, ExplorationMission  # noqa: E402
+from scout.mission import ExplorationMission  # noqa: E402
 from scout.robot import Robot  # noqa: E402
 from scout.transport import SocketTransport  # noqa: E402
 from sim_firmware import make_simulated_pair  # noqa: E402
@@ -217,6 +225,13 @@ def main() -> int:
         )
     }
 
+    # Set from the dashboard's HTTP thread (POST /reset_mission -> reset_fn
+    # below) to ask the main loop, which owns the actual mission lifecycle,
+    # to restart. threading.Event is the right primitive here specifically
+    # because it's safe to .set() from any thread and the main loop can
+    # .wait()/.is_set() on it without polling in a busy loop.
+    restart_event = threading.Event()
+
     def room_fn() -> dict:
         data = room.to_dict()
         data["robot"] = load_wheel_geometry()
@@ -229,12 +244,14 @@ def main() -> int:
         host=host,
         port=port,
         mesh_reconstruct_python=os.environ.get("MESH_RECONSTRUCT_PYTHON"),
+        reset_fn=restart_event.set,
     )
     print("Scout is exploring a simulated room.")
     print(f"Open http://{host}:{port} for the 2D map, or")
     print(f"     http://{host}:{port}/scene.html for the 3D view.")
     if loop:
         print("SCOUT_LOOP is set: a new lap starts automatically once one finishes.")
+    print("A Reset button in the dashboard restarts exploration on demand, any time.")
     print("Ctrl-C to stop.\n")
 
     try:
@@ -242,25 +259,44 @@ def main() -> int:
             mission = current["mission"]
             mission_thread = threading.Thread(target=mission.run, daemon=True)
             mission_thread.start()
-            mission_thread.join()
+
+            # Wait for whichever comes first: the mission finishing on its
+            # own, or a manual reset request. join(timeout=...) rather than
+            # a plain join() specifically so this loop keeps checking
+            # restart_event instead of blocking past it.
+            while mission_thread.is_alive() and not restart_event.is_set():
+                mission_thread.join(timeout=0.5)
+
+            manual_reset = restart_event.is_set()
+            if manual_reset:
+                mission.stop()  # ask a still-running mission to wind down now
+                mission_thread.join(timeout=5.0)
+            restart_event.clear()
 
             print(
                 f"Mission ended in state {mission.state} — grid coverage "
                 f"{mission.grid.coverage():.0%}."
+                + (" (manual reset)" if manual_reset else "")
             )
-            if not loop:
-                print("Dashboard stays up; Ctrl-C to quit.")
-                while True:
-                    time.sleep(1.0)
 
-            time.sleep(LOOP_PAUSE_S)
+            if not manual_reset and not loop:
+                print("Dashboard stays up; Ctrl-C to quit, or use the dashboard's Reset button.")
+                restart_event.wait()  # blocks here until a reset request arrives
+                restart_event.clear()
+            elif not manual_reset:
+                # Auto-loop pacing only — a manual reset means the viewer
+                # explicitly asked to start over right now, so restarting
+                # immediately is the more responsive, expected behavior;
+                # the pause exists purely to let an auto-finished map stay
+                # on screen a moment before SCOUT_LOOP sweeps it away.
+                time.sleep(LOOP_PAUSE_S)
+
             robot.set_pose(0.0, 0.0, 0.0)
             new_mission = ExplorationMission(
                 robot, new_grid(), min_frontier_cluster=2, depth_scanner=depth_scanner
             )
             current["mission"] = new_mission
-            if mission.state == DONE:
-                print("Starting a fresh lap.\n")
+            print("Starting a fresh lap.\n")
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
