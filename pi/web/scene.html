@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Scout — 3D scene</title>
 <style>
   :root { color-scheme: dark; }
@@ -11,13 +12,28 @@
     color: #e6e6e6;
     font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
-  #layout { display: flex; height: 100vh; }
-  #scenePane { flex: 1; position: relative; background: #05070a; }
+  html, body { height: 100%; overscroll-behavior: none; }
+  #layout { display: flex; height: 100vh; height: 100dvh; }
+  #scenePane {
+    flex: 1; min-width: 0; position: relative; background: #05070a;
+    touch-action: none; /* pinch/drag on the canvas drives OrbitControls,
+                            not the browser's own page zoom/scroll */
+  }
+  /* min-width:0 above matters more than it looks: flex items default to
+     min-width:auto, which respects a CHILD's intrinsic content size as an
+     unshrinkable floor, and a <canvas>'s intrinsic size is its width/height
+     attributes. Since resize() reads this element's clientWidth to SET
+     those very attributes, without min-width:0 that becomes a feedback
+     loop — a canvas sized too large props this pane open, which resize()
+     then reads back and enlarges further. Caught via live testing on a
+     narrow (375px) mobile viewport, where it stabilized at 600px; this is
+     the standard, well-documented fix for that whole class of bug. */
   #scenePane canvas { display: block; }
   #sidebar {
     width: 320px; flex-shrink: 0; padding: 16px; overflow-y: auto;
     box-sizing: border-box; border-left: 1px solid #2a2e35;
   }
+  #sidebarToggle { display: none; }
   #nav { margin-bottom: 12px; }
   #nav a { color: #8a8f98; text-decoration: none; font-size: 12px; }
   #nav a.active { color: #9fd0ff; }
@@ -72,6 +88,30 @@
   }
   #povToggle:hover { color: #9fd0ff; }
   #povPanel.collapsed #povCanvas, #povPanel.collapsed #povReadout { display: none; }
+
+  /* Phones and small tablets: the sidebar becomes an on-demand overlay
+     drawer instead of a permanent side column, so the 3D view gets the
+     full screen — the more important thing to see on a small display. */
+  @media (max-width: 820px) {
+    #sidebar {
+      position: fixed; top: 0; right: 0; height: 100%; height: 100dvh;
+      max-width: 85vw; transform: translateX(100%);
+      transition: transform 0.2s ease-out; z-index: 20;
+      box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #sidebarToggle {
+      display: flex; position: absolute; top: 12px; left: 14px; z-index: 15;
+      width: 40px; height: 40px; border-radius: 8px; border: 1px solid #3a3f47;
+      background: #1c2027cc; color: #cfd6de; font-size: 18px;
+      align-items: center; justify-content: center; backdrop-filter: blur(2px);
+    }
+    #zoomControls { bottom: 16px; right: 10px; }
+    #zoomControls button { width: 44px; height: 44px; font-size: 22px; }
+    #povPanel { width: min(220px, 55vw); top: 60px; }
+    #povCanvas { height: 110px; }
+    #note { display: none; } /* the ground-truth caveat is nice-to-have, not essential on a phone */
+  }
 </style>
 </head>
 <body>
@@ -79,7 +119,8 @@
   <div id="scenePane">
     <div id="note">Room walls shown here are ground truth from the simulator — a real
       robot has no such view, only what it has actually mapped (see the 2D map).</div>
-    <div id="hint">drag to orbit · scroll to zoom · right-drag to pan</div>
+    <div id="hint">drag to orbit · pinch/scroll to zoom · two-finger drag to pan</div>
+    <button id="sidebarToggle" title="Show info">&#9776;</button>
     <div id="zoomControls">
       <button id="zoomIn" title="Zoom in">+</button>
       <button id="zoomOut" title="Zoom out">&minus;</button>
@@ -182,6 +223,10 @@ controls.target.set(0, 0.35, 0);
 controls.enableDamping = true;
 controls.minDistance = 0.2;
 controls.maxDistance = 14;
+// Explicit rather than relying on OrbitControls' defaults (which happen to
+// match this anyway): one-finger drag orbits, two-finger pinch zooms and
+// two-finger drag pans — the standard touch mapping for a 3D viewer.
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
 // Zoom buttons: dolly the camera along its current view vector, same
 // effect as scroll-to-zoom but reachable without a wheel/trackpad.
@@ -197,14 +242,28 @@ function zoomBy(factor) {
 document.getElementById("zoomIn").addEventListener("click", () => zoomBy(0.8));
 document.getElementById("zoomOut").addEventListener("click", () => zoomBy(1.25));
 
+// Mobile sidebar drawer (see the @media block) — a no-op button on desktop
+// widths, where #sidebarToggle stays display:none.
+const sidebarEl = document.getElementById("sidebar");
+document.getElementById("sidebarToggle").addEventListener("click", () => {
+  sidebarEl.classList.toggle("open");
+});
+
 function resize() {
   const w = pane.clientWidth, h = pane.clientHeight;
+  if (w === 0 || h === 0) return;
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
-window.addEventListener("resize", resize);
-resize();
+// A ResizeObserver, not a window "resize" listener plus one synchronous
+// call: the window event never fires for changes caused by CSS/layout
+// alone (the mobile media query taking the sidebar out of flow, or the
+// initial flex/dvh layout not having settled yet at the instant this
+// script runs synchronously) — only for the browser chrome actually
+// changing size. That gap is exactly what left the canvas rendering into
+// a small stale square on first mobile load, caught via live testing.
+new ResizeObserver(resize).observe(pane);
 
 // ------------------------------------------------------------- robot POV
 //
@@ -233,10 +292,11 @@ function resizePov() {
     robot.povCamera.updateProjectionMatrix();
   }
 }
-window.addEventListener("resize", resizePov);
-// Initial sizing happens further down, right after `robot` (and its
-// povCamera) is actually declared — resizePov() reads robot.povCamera, and
-// calling it up here would hit the temporal dead zone for that `let`.
+// Observing (not a window "resize" listener) is what makes this reliable —
+// see the main renderer's resize() for why. The initial `robot.povCamera`
+// access still has to wait until `robot` is actually declared further
+// down (a `let` in temporal dead zone otherwise), so this is set up there,
+// not here.
 
 // The ultrasonic's live reading, drawn as a ray from the sensor along its
 // aim direction: green out to the echo distance if something was detected,
@@ -525,11 +585,10 @@ let robotDimensions = { wheel_diameter_mm: 90, track_width_mm: 115 };
 let robot = buildRobot(robotDimensions.wheel_diameter_mm, robotDimensions.track_width_mm);
 scene.add(robot.root);
 
-// The panel's CSS height applies on layout, which may not be settled the
-// instant this script runs — a couple of retries is cheap and reliable.
-resizePov();
-setTimeout(resizePov, 50);
-setTimeout(resizePov, 300);
+// Fires once immediately (per the ResizeObserver spec) and again on every
+// subsequent actual size change — reliable regardless of whether CSS
+// layout has settled yet when this line runs, unlike a one-shot call.
+new ResizeObserver(resizePov).observe(povCanvas);
 
 // ------------------------------------------------------------------- room
 

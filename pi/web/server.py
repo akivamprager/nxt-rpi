@@ -35,6 +35,43 @@ _STATIC_PAGES = {
     "/scene.html": ("scene.html", "text/html; charset=utf-8"),
 }
 
+#: Applied to every response — defence in depth for a server that's safe by
+#: construction anyway (see module docstring / docs/DEPLOY.md's security
+#: review): the whole HTTP surface is GET-only, serves a fixed set of known
+#: files by name (self.path never touches the filesystem), and the two JSON
+#: endpoints call fixed, closed-over functions with no user input in the
+#: request path they act on — there is nowhere for a request to inject a
+#: path, a command, or a query. These headers narrow the browser-side blast
+#: radius regardless: no embedding this page in someone else's iframe
+#: (clickjacking), no MIME-sniffing a response into executing as something
+#: it isn't, and a Content-Security-Policy that allows only this origin plus
+#: the one CDN scene.html actually loads Three.js from — not a wildcard.
+#:
+#: script-src includes 'unsafe-inline': both pages' own logic IS an inline
+#: <script> (confirmed by live testing — without this, the CSP blocks the
+#: pages' own module scripts, not just third-party ones). This is a
+#: deliberate, checked trade-off, not an oversight: every dynamic value
+#: either page ever renders goes through .textContent (verified by grep —
+#: nowhere does either file assign untrusted data via .innerHTML), so there
+#: is no reflected-XSS path for an inline-script allowance to actually
+#: enable. The alternative (a content hash per <script> block) would need
+#: recomputing on every edit to either file and silently break, unnoticed,
+#: exactly like this CSP did on its first real test, the moment anyone
+#: forgot.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "connect-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "frame-ancestors 'none'"
+    ),
+}
+
 
 def make_handler(
     snapshot_fn: Callable[[], dict], room_fn: Optional[Callable[[], dict]] = None
@@ -45,6 +82,10 @@ def make_handler(
     instantiates the handler class itself for every request — there's no
     hook to pass extra arguments through.
     """
+
+    def _send_security_headers(handler: BaseHTTPRequestHandler) -> None:
+        for name, value in _SECURITY_HEADERS.items():
+            handler.send_header(name, value)
 
     def _serve_json(handler: BaseHTTPRequestHandler, fn: Callable[[], dict]) -> None:
         try:
@@ -57,6 +98,7 @@ def make_handler(
         handler.send_header("Content-Type", "application/json")
         handler.send_header("Content-Length", str(len(body)))
         handler.send_header("Cache-Control", "no-store")
+        _send_security_headers(handler)
         handler.end_headers()
         handler.wfile.write(body)
 
@@ -84,6 +126,7 @@ def make_handler(
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            _send_security_headers(self)
             self.end_headers()
             self.wfile.write(body)
 

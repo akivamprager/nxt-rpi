@@ -1,0 +1,29 @@
+# Render Blueprint — deploys the live exploration demo (pi/tools/demo_explore.py)
+# to the internet on Render's free tier. See docs/DEPLOY.md for the actual
+# deployment steps and the security review behind these choices.
+#
+# No buildCommand installing anything: the demo's entire dependency chain
+# (protocol, transport, robot, mapping, explore, mission, the simulator, and
+# the web server) is standard library only — traced and confirmed, not
+# assumed. config.yaml parsing is the one place PyYAML would matter, and
+# that import is lazy with a safe fallback if it's missing, so there is
+# genuinely nothing to pip install for this specific deployment.
+services:
+  - type: web
+    name: scout-demo
+    runtime: python
+    plan: free
+    buildCommand: "echo 'no dependencies to install — see docs/DEPLOY.md'"
+    startCommand: "python3 pi/tools/demo_explore.py"
+    envVars:
+      # Render injects PORT itself; demo_explore.py reads it automatically.
+      # SCOUT_HOST must be set explicitly — the script defaults to
+      # 127.0.0.1 (safe default for local dev) and never binds a publicly
+      # reachable address on its own.
+      - key: SCOUT_HOST
+        value: 0.0.0.0
+      # Without this, the demo goes still once it finishes exploring and
+      # stays that way — fine for local interactive use, a worse first
+      # impression for a visitor who lands mid-pause on a public demo.
+      - key: SCOUT_LOOP
+        value: "1"

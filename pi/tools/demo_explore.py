@@ -7,7 +7,27 @@ and a live browser dashboard. Run it and open the printed URL.
 
     python3 pi/tools/demo_explore.py
 
-Ctrl-C to stop. Standard library only — nothing to install.
+Ctrl-C to stop. Standard library only — nothing to install, confirmed by
+tracing the actual import chain (see docs/DEPLOY.md): config.yaml parsing is
+the one place PyYAML would matter, and that import is lazy with a safe
+fallback (load_wheel_geometry below), so even a bare `python3` with nothing
+pip-installed runs this correctly.
+
+Environment variables (all optional, all default to the plain local-dev
+behavior above):
+
+    PORT          port to listen on (default 8080). Read as `PORT` first,
+                  matching what most hosting platforms inject, before
+                  falling back to `SCOUT_PORT` for a locally-meaningful name.
+    SCOUT_HOST    interface to bind (default 127.0.0.1). Public deployment
+                  needs 0.0.0.0 — see docs/DEPLOY.md's render.yaml, which
+                  sets this explicitly rather than defaulting a demo tool to
+                  a publicly-reachable bind.
+    SCOUT_LOOP    if set, start a fresh lap (new grid, robot pose reset to
+                  the origin) once a mission reaches DONE, instead of
+                  stopping there. A public demo that just goes still after
+                  finishing is a worse demo than one that keeps exploring;
+                  local interactive use doesn't need this.
 """
 
 from __future__ import annotations
@@ -21,7 +41,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from scout import config as cfg  # noqa: E402
 from scout.mapping import OccupancyGrid  # noqa: E402
-from scout.mission import ExplorationMission  # noqa: E402
+from scout.mission import DONE, ExplorationMission  # noqa: E402
 from scout.robot import Robot  # noqa: E402
 from scout.transport import SocketTransport  # noqa: E402
 from sim_firmware import make_simulated_pair  # noqa: E402
@@ -29,6 +49,11 @@ from sim_world import SimulatedRoom  # noqa: E402
 from web.server import start as start_dashboard  # noqa: E402
 
 _CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.yaml")
+
+#: How long the finished map stays on screen before a fresh lap starts, when
+#: SCOUT_LOOP is set — long enough that a viewer who just watched it finish
+#: can actually see the completed map, short enough not to look stalled.
+LOOP_PAUSE_S = 8.0
 
 
 def load_wheel_geometry() -> dict:
@@ -64,7 +89,20 @@ def build_room() -> SimulatedRoom:
     return room
 
 
+def new_grid() -> OccupancyGrid:
+    # Sized to cover the room with margin on all sides, per BUILD.md's note
+    # that the grid represents a bounded area — the edge of the array is a
+    # modelling boundary, not something to explore toward.
+    return OccupancyGrid(
+        width=34, height=28, cell_size_mm=100.0, origin_x_mm=-1700.0, origin_y_mm=-1400.0
+    )
+
+
 def main() -> int:
+    host = os.environ.get("SCOUT_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", os.environ.get("SCOUT_PORT", "8080")))
+    loop = bool(os.environ.get("SCOUT_LOOP"))
+
     room = build_room()
     pi_sock, sim = make_simulated_pair(telemetry_period_ms=50, world=room)
 
@@ -79,42 +117,53 @@ def main() -> int:
     robot.connect(timeout=5.0)
     robot.wait_for_telemetry(timeout=2.0)
 
-    # Sized to cover the room with margin on all sides, per BUILD.md's note
-    # that the grid represents a bounded area — the edge of the array is a
-    # modelling boundary, not something to explore toward.
-    grid = OccupancyGrid(
-        width=34, height=28, cell_size_mm=100.0, origin_x_mm=-1700.0, origin_y_mm=-1400.0
-    )
-    mission = ExplorationMission(robot, grid, min_frontier_cluster=2)
-
-    mission_thread = threading.Thread(target=mission.run, daemon=True)
-    mission_thread.start()
+    # A mutable box, not a bare variable: the dashboard's snapshot_fn closes
+    # over this so it always reads whichever mission is current, even after
+    # SCOUT_LOOP swaps in a fresh one — a plain closure over `mission` would
+    # keep calling the FIRST lap's (by-then finished, DONE-forever) mission.
+    current = {"mission": ExplorationMission(robot, new_grid(), min_frontier_cluster=2)}
 
     def room_fn() -> dict:
         data = room.to_dict()
         data["robot"] = load_wheel_geometry()
         return data
 
-    dashboard = start_dashboard(mission.snapshot, room_fn=room_fn, port=8080)
+    dashboard = start_dashboard(
+        lambda: current["mission"].snapshot(), room_fn=room_fn, host=host, port=port
+    )
     print("Scout is exploring a simulated room.")
-    print("Open http://127.0.0.1:8080 for the 2D map, or")
-    print("     http://127.0.0.1:8080/scene.html for the 3D view.")
+    print(f"Open http://{host}:{port} for the 2D map, or")
+    print(f"     http://{host}:{port}/scene.html for the 3D view.")
+    if loop:
+        print("SCOUT_LOOP is set: a new lap starts automatically once one finishes.")
     print("Ctrl-C to stop.\n")
 
     try:
-        while mission_thread.is_alive():
-            time.sleep(0.5)
-        print(
-            f"Mission ended in state {mission.state} — grid coverage "
-            f"{grid.coverage():.0%}. Dashboard stays up; Ctrl-C to quit."
-        )
         while True:
-            time.sleep(1.0)
+            mission = current["mission"]
+            mission_thread = threading.Thread(target=mission.run, daemon=True)
+            mission_thread.start()
+            mission_thread.join()
+
+            print(
+                f"Mission ended in state {mission.state} — grid coverage "
+                f"{mission.grid.coverage():.0%}."
+            )
+            if not loop:
+                print("Dashboard stays up; Ctrl-C to quit.")
+                while True:
+                    time.sleep(1.0)
+
+            time.sleep(LOOP_PAUSE_S)
+            robot.set_pose(0.0, 0.0, 0.0)
+            new_mission = ExplorationMission(robot, new_grid(), min_frontier_cluster=2)
+            current["mission"] = new_mission
+            if mission.state == DONE:
+                print("Starting a fresh lap.\n")
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
-        mission.stop()
-        mission_thread.join(timeout=5.0)
+        current["mission"].stop()
         dashboard.shutdown()
         try:
             robot.stop()
