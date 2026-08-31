@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
 
+from .localize import CameraGeometry, chassis_pose_from_marker
 from .pose2d import Pose2D
 
 DEFAULT_DICTIONARY = cv2.aruco.DICT_4X4_50
@@ -157,6 +159,45 @@ class ArucoDetector:
                 )
             )
         return detections
+
+
+def make_localizer(
+    capture_frame_gray: Callable[[], np.ndarray],
+    detector: ArucoDetector,
+    markers: dict[int, Pose2D],
+    geometry: CameraGeometry,
+) -> Callable[[float], Optional[Pose2D]]:
+    """Build mission.py's `localizer` hook for real hardware — completes
+    the ArUco pose-correction chain (localize.py's pure algebra, this
+    module's real detection) that was designed but never actually wired
+    into a running mission until now (see live_explore.py).
+
+    Composes capture -> detect -> correct, the same pattern
+    depth_estimator.make_depth_scanner uses for the depth-camera hook:
+    `capture_frame_gray` is injected rather than hardcoded to picamera2, so
+    this composition is fully testable with a fake frame source and a real
+    ArucoDetector fed a synthetic marker image (see test_vision.py's own
+    pattern) rather than needing a physical camera.
+
+    Only the first detected marker with a known (surveyed) id is used —
+    matches chassis_pose_from_marker's "one marker sighting" contract.
+    Detections of unknown marker ids (not in `markers`) are ignored rather
+    than treated as an error, since an extra unsurveyed marker in frame is
+    an expected, harmless case, not a fault.
+    """
+
+    def localize(turret_angle_deg: float) -> Optional[Pose2D]:
+        frame_gray = capture_frame_gray()
+        for detection in detector.detect(frame_gray):
+            marker_world = markers.get(detection.marker_id)
+            if marker_world is None:
+                continue
+            return chassis_pose_from_marker(
+                marker_world, detection.pose_in_camera, turret_angle_deg, geometry
+            )
+        return None
+
+    return localize
 
 
 def generate_marker_image(

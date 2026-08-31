@@ -40,12 +40,13 @@ from .robot import Robot, RobotError
 Localizer = Callable[[float], Optional[Pose2D]]
 
 #: Called with the current telemetry after each sweep stop; returns a list
-#: of world-frame (x_mm, y_mm, z_mm) points from a depth-camera-like scan
-#: taken from there (empty if none). Same pattern as Localizer: mission.py
-#: has no dependency on sim_world.py or any particular camera geometry, only
-#: on accumulating whatever points a scan produces — see demo_explore.py for
-#: how a real (currently: simulated) depth scanner plugs in here.
-DepthScanner = Callable[[p.Telemetry], list[tuple[float, float, float]]]
+#: of world-frame (x_mm, y_mm, z_mm, r, g, b) coloured points from a
+#: depth-camera-like scan taken from there (empty if none). Same pattern as
+#: Localizer: mission.py has no dependency on sim_world.py or any particular
+#: camera geometry, only on accumulating whatever points a scan produces —
+#: see demo_explore.py (simulated) and live_explore.py (real hardware) for
+#: how a depth scanner plugs in here.
+DepthScanner = Callable[[p.Telemetry], list[tuple[float, float, float, int, int, int]]]
 
 IDLE, SWEEPING, PLANNING, DRIVING, RECOVERING, DONE = (
     "IDLE",

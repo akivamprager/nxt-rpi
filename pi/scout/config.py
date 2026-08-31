@@ -41,11 +41,25 @@ class CameraGeometryConfig:
     """The camera/turret offsets consumed by localize.CameraGeometry, plus
     the calibration file path — kept separate from localize.CameraGeometry
     itself so this module has no import-time dependency on how vision.py
-    eventually structures its calibration data."""
+    eventually structures its calibration data.
+
+    `camera_height_mm`/`camera_pitch_deg` are the two measurements
+    depth_estimator.camera_pose_3d needs beyond what CameraGeometry already
+    has: camera_mount/turret_mount are 2D-only (Pose2D has no z or tilt),
+    because the turret itself only ever yaws — there is no second axis of
+    motion (see the plan's "three servos total" constraint). A fixed
+    mounting height and downward tilt are enough to place the camera in 3D
+    given that one constraint."""
 
     camera_mount: Pose2D
     turret_mount: Pose2D
     intrinsics_path: str
+    camera_height_mm: float
+    camera_pitch_deg: float
+    #: The physical size (edge length) of printed ArUco markers, mm — feeds
+    #: vision.ArucoDetector's solvePnP call directly. Every marker in this
+    #: build must be printed at this same size (see docs/BUILD.md).
+    marker_size_mm: float
 
 
 @dataclass(frozen=True)
@@ -127,6 +141,15 @@ def _build_camera(data: dict) -> CameraGeometryConfig:
         camera_mount=_as_pose(_require(section, "camera_mount", "camera"), "camera.camera_mount"),
         turret_mount=_as_pose(_require(section, "turret_mount", "camera"), "camera.turret_mount"),
         intrinsics_path=str(_require(section, "intrinsics_path", "camera")),
+        camera_height_mm=_as_float(
+            _require(section, "camera_height_mm", "camera"), "camera.camera_height_mm"
+        ),
+        camera_pitch_deg=_as_float(
+            _require(section, "camera_pitch_deg", "camera"), "camera.camera_pitch_deg"
+        ),
+        marker_size_mm=_as_float(
+            _require(section, "marker_size_mm", "camera"), "camera.marker_size_mm"
+        ),
     )
 
 

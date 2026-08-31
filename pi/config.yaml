@@ -51,6 +51,21 @@ camera:
   # (checkerboard capture + cv2.calibrateCamera). Relative to this file.
   intrinsics_path: calibration/camera.npz
 
+  # Height of the camera above the floor and its fixed downward tilt — see
+  # depth_estimator.camera_pose_3d. The turret only yaws (no second axis of
+  # motion), so these two numbers, not a live sensor reading, are what place
+  # the camera in 3D for depth-map backprojection. Measure once the camera
+  # is mounted; the placeholders below assume roughly turret height and a
+  # forward/down lean similar to the simulated demo's camera mount.
+  camera_height_mm: 150.0
+  camera_pitch_deg: -20.0
+
+  # Physical edge length of the printed ArUco markers (DICT_4X4_50) placed
+  # around the room — every marker must be printed at this same size, or
+  # solvePnP's distance estimate will be scaled wrong. Measure the actual
+  # printout, not the intended print size (printer scaling drifts).
+  marker_size_mm: 100.0
+
 grid:
   # Sized to cover the room with margin on every side — the grid represents
   # a bounded area, and the edge of the array is a modelling boundary, not

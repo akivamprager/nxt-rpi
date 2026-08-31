@@ -6,14 +6,16 @@ This is deliberately the "watch it work tonight, no installs" version; Phase
 stone toward, once there's a real Pi to run Mosquitto on.
 
 Serves two pages against the same live data:
-- `/` (index.html) — the 2D occupancy-grid map, polling `/state.json`.
-- `/scene.html` — a 3D view of the robot in the room, polling `/state.json`,
-  `/room.json`, and `/pointcloud.json`. See scene.html's own docstring-
-  equivalent comment for what "3D" does and doesn't mean here: `/room.json`
-  is ground-truth geometry (a real robot has no such oracle), while
-  `/pointcloud.json` is the opposite — an honestly-earned map built from
-  repeated simulated depth scans, the same way the 2D occupancy grid is
-  built from repeated ultrasonic readings, not read from the ground truth.
+- `/` (scene.html) — the default landing page: a 3D view of the robot in
+  the room, polling `/state.json`, `/room.json`, and `/pointcloud.json`.
+  See scene.html's own docstring-equivalent comment for what "3D" does and
+  doesn't mean here: `/room.json` is ground-truth geometry (a real robot
+  has no such oracle), while `/pointcloud.json` is the opposite — an
+  honestly-earned map built from repeated simulated depth scans, the same
+  way the 2D occupancy grid is built from repeated ultrasonic readings, not
+  read from the ground truth.
+- `/index.html` — the 2D occupancy-grid map, polling `/state.json`. Not the
+  default; reachable via scene.html's own nav link.
 
 Both poll rather than push (~300ms) — simpler than a WebSocket, and at this
 data rate and audience (one browser tab on the same machine or LAN) there is
@@ -33,8 +35,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 #: path -> (file on disk, content-type). Kept as a plain dict rather than a
 #: general static-file server so nothing outside pi/web/ is ever reachable.
 _STATIC_PAGES = {
-    "/": ("index.html", "text/html; charset=utf-8"),
-    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/": ("scene.html", "text/html; charset=utf-8"),  # 3D scene is the default landing page
+    "/index.html": ("index.html", "text/html; charset=utf-8"),  # 2D map, not the default
     "/scene.html": ("scene.html", "text/html; charset=utf-8"),
 }
 

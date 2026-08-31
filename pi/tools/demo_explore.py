@@ -87,14 +87,52 @@ def build_room() -> SimulatedRoom:
         ]
     )
     room.add_wall((-200.0, -1200.0), (-200.0, 300.0))
+
+    # Box-shaped stand-ins for scene.html's decorative furniture (sofa,
+    # coffee table, bookshelf, floor lamp — the rug is skipped: it's flush
+    # with the floor, not a real 3D obstacle a depth ray would distinguish
+    # from the floor itself). Positions/colours hand-converted from
+    # scene.html's furnish() layout for THIS room's exact wall bounds (see
+    # that function's own minX/maxX/minZ/maxZ + marginFromWall math) so the
+    # depth-scanned point cloud/mesh actually matches what the 3D scene
+    # view renders, not just an empty shell — see FurnitureBox's docstring
+    # for why this only affects depth_scan, not 2D collision/exploration.
+    room.add_furniture(  # sofa: scene.html's fabric 0x5c6f8a
+        -600.0, 850.0, width_x_mm=900.0, depth_y_mm=450.0, height_mm=440.0,
+        color=(92, 111, 138),
+    )
+    room.add_furniture(  # coffee table: scene.html's wood 0x8a6540
+        -600.0, 300.0, width_x_mm=500.0, depth_y_mm=280.0, height_mm=270.0,
+        color=(138, 101, 64),
+    )
+    room.add_furniture(  # bookshelf: scene.html's wood 0x5a4632, rotated 90deg
+        1150.0, -600.0, width_x_mm=240.0, depth_y_mm=500.0, height_mm=1100.0,
+        color=(90, 70, 50),
+    )
+    # Floor lamp: scene.html's metal 0x2b2e33. A coarse stand-in — its real
+    # shape (a thin ~10mm pole with a wide shade near the top) has no good
+    # single-box approximation, so this is sized more like the shade+base
+    # region than the whole fixture.
+    room.add_furniture(
+        1045.0, 745.0, width_x_mm=200.0, depth_y_mm=200.0, height_mm=1500.0,
+        color=(43, 46, 51),
+    )
     return room
 
 
-#: A fixed downward tilt for the simulated depth camera, matching the visual
-#: forward-leaning bracket in scene.html's robot model — a level camera
-#: would mostly see the far wall instead of the floor and nearby obstacles a
-#: real mapping camera needs to see.
-DEPTH_CAMERA_PITCH_DEG = -20.0
+#: A slight downward tilt for the simulated depth camera, matching the
+#: visual forward-leaning bracket in scene.html's robot model. Originally
+#: -20 degrees with a narrower 45-degree vertical FOV — heavily floor-
+#: biased, which produced a point cloud only 0-260mm tall (verified against
+#: a real mesh_reconstruct.py run: Poisson reconstruction of that thin,
+#: non-enclosing "shell" collapsed into a twisted-ribbon artifact instead of
+#: a room, since it assumes a proper enclosed 3D surface). Widened to -5/90
+#: below so a scan's vertical cone actually spans floor to above the room's
+#: 900mm wall height (see SimulatedRoom.wall_height_mm) across the range of
+#: distances a robot sees walls from, not just the ground right in front of
+#: it — the difference between "floor/obstacle mapping" and "reconstructing
+#: the room's shape," which is what this demo is actually for.
+DEPTH_CAMERA_PITCH_DEG = -5.0
 #: Mount point relative to the chassis origin: forward of the turret's own
 #: axis (the camera sits at the front of the turret housing, not its
 #: center) and up at roughly turret height.
@@ -122,9 +160,9 @@ def make_depth_scanner(room: SimulatedRoom):
             yaw_deg=yaw_deg,
             pitch_deg=DEPTH_CAMERA_PITCH_DEG,
             h_fov_deg=60.0,
-            v_fov_deg=45.0,
+            v_fov_deg=90.0,
             h_samples=14,
-            v_samples=10,
+            v_samples=16,
             max_range_mm=2500.0,
         )
 

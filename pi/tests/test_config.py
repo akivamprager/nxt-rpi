@@ -28,6 +28,9 @@ VALID = {
         "camera_mount": {"x_mm": 40.0, "y_mm": 0.0, "heading_deg": 0.0},
         "turret_mount": {"x_mm": 20.0, "y_mm": 0.0, "heading_deg": 0.0},
         "intrinsics_path": "calibration/camera.npz",
+        "camera_height_mm": 150.0,
+        "camera_pitch_deg": -20.0,
+        "marker_size_mm": 100.0,
     },
     "grid": {
         "width": 60,
@@ -52,6 +55,9 @@ def test_valid_config_builds_successfully():
     result = cfg.from_dict(VALID)
     assert result.robot.wheel_diameter_mm == 56.0
     assert result.camera.camera_mount == Pose2D(40.0, 0.0, 0.0)
+    assert result.camera.camera_height_mm == 150.0
+    assert result.camera.camera_pitch_deg == -20.0
+    assert result.camera.marker_size_mm == 100.0
     assert result.grid.width == 60
     assert result.mission.sweep_angles_deg == (-90, -60, -30, 0, 30, 60, 90)
     assert result.markers[0] == Pose2D(3000.0, 0.0, 180.0)

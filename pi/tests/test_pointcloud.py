@@ -1,4 +1,5 @@
-"""Tests for the 3D point cloud accumulator's dedup/rounding/cap logic.
+"""Tests for the 3D point cloud accumulator's dedup/rounding/cap/colour
+logic.
 
 No hardware, no numpy — pure algorithm correctness on synthetic points.
 """
@@ -20,7 +21,7 @@ def test_empty_map_has_zero_points():
 
 def test_a_single_point_is_stored():
     pc = PointCloudMap(resolution_mm=10.0)
-    pc.add_points([(100.0, 200.0, 300.0)])
+    pc.add_points([(100.0, 200.0, 300.0, 255, 0, 0)])
     assert len(pc) == 1
 
 
@@ -29,14 +30,24 @@ def test_points_within_the_same_resolution_cell_are_deduplicated():
     different sweeps of the same real surface should collapse to one
     stored point, not grow the cloud forever as the robot keeps scanning."""
     pc = PointCloudMap(resolution_mm=20.0)
-    pc.add_points([(100.0, 100.0, 100.0)])
-    pc.add_points([(105.0, 98.0, 103.0)])  # well within one 20mm cell
+    pc.add_points([(100.0, 100.0, 100.0, 10, 10, 10)])
+    pc.add_points([(105.0, 98.0, 103.0, 20, 20, 20)])  # well within one 20mm cell
     assert len(pc) == 1
+
+
+def test_a_later_scan_of_the_same_cell_overwrites_its_colour():
+    """Last-wins, not merged/averaged — see pointcloud.py's docstring on
+    why (self-correcting for a transient bad reading)."""
+    pc = PointCloudMap(resolution_mm=20.0)
+    pc.add_points([(100.0, 100.0, 100.0, 255, 0, 0)])
+    pc.add_points([(100.0, 100.0, 100.0, 0, 255, 0)])
+    assert len(pc) == 1
+    assert pc.to_dict()["points"][0][3:] == [0, 255, 0]
 
 
 def test_points_in_different_cells_are_kept_separately():
     pc = PointCloudMap(resolution_mm=20.0)
-    pc.add_points([(0.0, 0.0, 0.0), (500.0, 0.0, 0.0)])
+    pc.add_points([(0.0, 0.0, 0.0, 1, 2, 3), (500.0, 0.0, 0.0, 4, 5, 6)])
     assert len(pc) == 2
 
 
@@ -44,7 +55,7 @@ def test_repeated_scans_of_a_static_surface_do_not_grow_unboundedly():
     """The realistic case this exists for: the same wall, scanned from the
     same spot, many sweep cycles in a row."""
     pc = PointCloudMap(resolution_mm=20.0)
-    surface = [(300.0, float(y), 100.0) for y in range(-500, 500, 50)]
+    surface = [(300.0, float(y), 100.0, 128, 128, 128) for y in range(-500, 500, 50)]
     for _ in range(20):
         pc.add_points(surface)
     assert len(pc) == len(surface)
@@ -53,29 +64,30 @@ def test_repeated_scans_of_a_static_surface_do_not_grow_unboundedly():
 def test_max_points_caps_growth():
     pc = PointCloudMap(resolution_mm=1.0, max_points=10)
     # Each point is in its own 1mm cell, so nothing here dedups away.
-    pc.add_points([(float(i), 0.0, 0.0) for i in range(50)])
+    pc.add_points([(float(i), 0.0, 0.0, 0, 0, 0) for i in range(50)])
     assert len(pc) == 10
 
 
 def test_clear_empties_the_map():
     pc = PointCloudMap()  # default 20mm resolution
-    pc.add_points([(0.0, 0.0, 0.0), (500.0, 0.0, 0.0)])  # clearly separate cells
+    pc.add_points([(0.0, 0.0, 0.0, 1, 1, 1), (500.0, 0.0, 0.0, 2, 2, 2)])  # separate cells
     assert len(pc) == 2
     pc.clear()
     assert len(pc) == 0
 
 
-def test_to_dict_round_trips_the_resolution_and_point_values():
+def test_to_dict_round_trips_the_resolution_position_and_colour():
     pc = PointCloudMap(resolution_mm=10.0)
-    pc.add_points([(123.0, 45.0, 67.0)])
+    pc.add_points([(123.0, 45.0, 67.0, 200, 150, 100)])
     data = pc.to_dict()
     assert data["resolution_mm"] == 10.0
     assert len(data["points"]) == 1
-    x, y, z = data["points"][0]
-    # Rounded to the nearest 10mm.
+    x, y, z, r, g, b = data["points"][0]
+    # Position rounded to the nearest 10mm.
     assert x == round(123.0 / 10.0) * 10.0
     assert y == round(45.0 / 10.0) * 10.0
     assert z == round(67.0 / 10.0) * 10.0
+    assert (r, g, b) == (200, 150, 100)
 
 
 if __name__ == "__main__":

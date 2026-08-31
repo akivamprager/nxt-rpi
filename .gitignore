@@ -12,6 +12,19 @@ nxt-firmware/build/
 pi/calibration/*.npz
 markers/*.png
 
+# Downloaded ML model weights (depth_server.py's MiDaS backend) — a ~66MB
+# binary that's trivially re-downloadable, not project content.
+pi/tools/models/
+
 # Scratch copy of a reference video/frames used to design scene.html's
 # robot model — not project content. Safe to delete; ignored either way.
 .tmp_video/
+
+# A separate Python 3.11 venv just for mesh_reconstruct.py, since Open3D
+# has no macOS wheel for the project's main Python (3.14) yet — see that
+# file's docstring. Not project content, trivially recreated.
+.venv-mesh/
+
+# mesh_reconstruct.py's generated output — regeneratable from a running
+# dashboard's live point cloud, not project content.
+*.ply

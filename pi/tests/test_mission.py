@@ -265,7 +265,11 @@ def test_sweep_accumulates_depth_scanner_points_into_the_point_cloud():
 
         def fake_depth_scanner(telemetry):
             calls.append(telemetry.turret_deg)
-            return [(100.0, 200.0, 300.0), (100.0, 200.0, 300.0), (400.0, 0.0, 0.0)]
+            return [
+                (100.0, 200.0, 300.0, 255, 0, 0),
+                (100.0, 200.0, 300.0, 255, 0, 0),
+                (400.0, 0.0, 0.0, 0, 255, 0),
+            ]
 
         mission = ExplorationMission(
             h.robot, grid, sweep_angles=(-30.0, 0.0), depth_scanner=fake_depth_scanner

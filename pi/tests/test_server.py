@@ -109,8 +109,25 @@ def test_index_serves_with_200_and_security_headers():
     assert b"<html" in r.body.lower()
 
 
+def test_root_path_serves_scene_html_not_index_html():
+    """The 3D scene is the default landing page, not the 2D map — see
+    server.py's _STATIC_PAGES. "/" and "/scene.html" must be byte-identical;
+    "/index.html" (the 2D map) must be a genuinely different file."""
+    root = _do_request(HANDLER, "GET", "/")
+    scene = _do_request(HANDLER, "GET", "/scene.html")
+    index = _do_request(HANDLER, "GET", "/index.html")
+    assert root.body == scene.body
+    assert root.body != index.body
+
+
 def test_scene_html_is_also_served():
     r = _do_request(HANDLER, "GET", "/scene.html")
+    assert r.status == 200
+    assert b"<html" in r.body.lower()
+
+
+def test_index_html_is_reachable_at_its_own_path():
+    r = _do_request(HANDLER, "GET", "/index.html")
     assert r.status == 200
     assert b"<html" in r.body.lower()
 
