@@ -179,6 +179,7 @@
       <button id="zoomOut" title="Zoom out">&minus;</button>
       <button id="meshToggle" title="Toggle point cloud / live mesh">&#9670;</button>
       <button id="roomToggle" title="Toggle ground-truth room / earned reconstruction">&#8862;</button>
+      <button id="downloadMesh" title="Download an accurate mesh (.ply), built server-side from the full scan so far">&#8595;</button>
     </div>
     <div id="onboardingOverlay">
       <div id="onboardingModal">
@@ -193,6 +194,8 @@
             mesh, both rebuilt from the robot's own scans as it explores.</li>
           <li><span class="key">&#8862;</span> Cycle what's shown: ground-truth room + reconstruction together,
             the earned reconstruction alone, or the ground-truth room alone.</li>
+          <li><span class="key">&#8595;</span> Download an accurate mesh (.ply) built server-side from the
+            full scan — a higher-quality, slower reconstruction than the live one above.</li>
           <li><span class="key">POV</span> The small panel top-right shows exactly what the robot's own
             camera sees right now — click "hide" to collapse it.</li>
           <li><span class="key">&#9776;</span> On a phone, opens the stats panel (state, coverage, pose, etc).</li>
@@ -534,6 +537,50 @@ roomToggleButton.title = ROOM_TOGGLE_TITLES[roomVisibilityMode]; // initial labe
 // THREE.Group()`), and calling it this early would hit that `let`'s
 // temporal dead zone. See the actual initial call next to that
 // declaration instead.
+
+// "Download the accurate mesh" — deliberately NOT exporting the live
+// in-browser mesh (see MESH_RESOLUTION's own comment on why that one is
+// intentionally coarse/fast, not accurate). This instead asks the server
+// to run mesh_reconstruct.py's real Open3D/Poisson pipeline against the
+// full scan and streams back a .ply — see server.py's
+// POST /reconstruct_mesh and its mesh_reconstruct_python setup
+// requirement. Can take up to ~2 minutes on a large scan (Poisson
+// reconstruction isn't instant), hence the button's own loading state
+// below rather than leaving the user guessing whether the click registered.
+const downloadMeshButton = document.getElementById("downloadMesh");
+const DOWNLOAD_MESH_DEFAULT_TITLE = downloadMeshButton.title;
+downloadMeshButton.addEventListener("click", async () => {
+  if (downloadMeshButton.disabled) return; // already in flight
+  downloadMeshButton.disabled = true;
+  downloadMeshButton.textContent = "…"; // ellipsis: working
+  downloadMeshButton.title = "Generating the mesh server-side — this can take a minute or two...";
+  try {
+    const res = await fetch("/reconstruct_mesh", { method: "POST" });
+    if (!res.ok) {
+      const message = await res.text().catch(() => "");
+      throw new Error(`${res.status}: ${message || res.statusText}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "room_mesh.ply";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    // A real, user-visible failure mode — most likely MESH_RECONSTRUCT_PYTHON
+    // isn't configured on this server (see the 503 case) — surfaced via
+    // alert() rather than silently failing, since there's no toast/status
+    // UI elsewhere on this page to route it through instead.
+    alert(`Mesh download failed: ${err.message}`);
+  } finally {
+    downloadMeshButton.disabled = false;
+    downloadMeshButton.textContent = "↓";
+    downloadMeshButton.title = DOWNLOAD_MESH_DEFAULT_TITLE;
+  }
+});
 
 // Caps how many points feed one mesh rebuild — real per-point cost (grid
 // index + dilation neighbours, see below), and PointCloudMap's cloud can

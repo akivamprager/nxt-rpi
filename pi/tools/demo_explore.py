@@ -28,6 +28,15 @@ behavior above):
                   stopping there. A public demo that just goes still after
                   finishing is a worse demo than one that keeps exploring;
                   local interactive use doesn't need this.
+    MESH_RECONSTRUCT_PYTHON
+                  path to a Python interpreter with Open3D installed (e.g.
+                  .venv-mesh/bin/python3 — see mesh_reconstruct.py's
+                  docstring for why that's usually a separate Python from
+                  this one). Powers scene.html's "download the accurate
+                  mesh" button. Unset by default: that button then 503s
+                  with a clear message rather than failing silently — a
+                  public deployment (e.g. Render) won't have this
+                  configured unless specifically set up for it.
 """
 
 from __future__ import annotations
@@ -219,6 +228,7 @@ def main() -> int:
         pointcloud_fn=lambda: current["mission"].point_cloud.to_dict(),
         host=host,
         port=port,
+        mesh_reconstruct_python=os.environ.get("MESH_RECONSTRUCT_PYTHON"),
     )
     print("Scout is exploring a simulated room.")
     print(f"Open http://{host}:{port} for the 2D map, or")

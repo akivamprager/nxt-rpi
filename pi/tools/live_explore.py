@@ -33,6 +33,12 @@ Environment variables:
                           scout/tflite_depth_estimator.py's setup notes).
     PORT / SCOUT_PORT     dashboard port (default 8080).
     SCOUT_HOST            dashboard bind interface (default 127.0.0.1).
+    MESH_RECONSTRUCT_PYTHON
+                          path to a Python with Open3D installed — powers
+                          scene.html's "download the accurate mesh" button
+                          (see demo_explore.py's own docstring for the same
+                          variable; unset by default, that button 503s with
+                          a clear message rather than failing silently).
 """
 
 from __future__ import annotations
@@ -131,6 +137,7 @@ def main() -> int:
         mission.snapshot,
         pointcloud_fn=lambda: mission.point_cloud.to_dict(),
         host=host, port=port,
+        mesh_reconstruct_python=os.environ.get("MESH_RECONSTRUCT_PYTHON"),
     )
     print("Scout is exploring — real hardware, real depth camera.")
     print(f"Open http://{host}:{port} for the 2D map, or")

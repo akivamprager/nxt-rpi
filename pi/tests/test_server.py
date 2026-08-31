@@ -178,11 +178,57 @@ def test_unknown_path_is_404_not_a_file_read_attempt():
 
 
 def test_post_to_a_page_path_is_rejected():
-    """No POST handler is defined anywhere — BaseHTTPRequestHandler's
-    default response for an undefined method is the correct, safe behavior
-    here (this server has no state-changing endpoints at all)."""
+    """do_POST only ever recognizes /reconstruct_mesh (see below) — any
+    other path, including real GET-only endpoints, is a clean 404, not a
+    state change of any kind."""
     r = _do_request(HANDLER, "POST", "/state.json")
-    assert r.status in (501, 405)
+    assert r.status == 404
+
+
+def test_reconstruct_mesh_404s_when_not_configured():
+    """Without mesh_reconstruct_python configured, this endpoint doesn't
+    exist (see server.py's docstring on POST /reconstruct_mesh) — the
+    default HANDLER fixture has no mesh_reconstruct_python, so this should
+    503, not silently attempt to run a script that isn't there."""
+    r = _do_request(HANDLER, "POST", "/reconstruct_mesh")
+    assert r.status == 503
+
+
+def test_reconstruct_mesh_runs_the_configured_interpreter_and_streams_the_result():
+    """A fake 'interpreter' standing in for a real Open3D-equipped Python —
+    proves the actual subprocess wiring (argv shape passed to
+    mesh_reconstruct_python, finding --out, streaming the resulting file
+    back as the response body) without needing Open3D or network access
+    for a real mesh_reconstruct.py run. `mesh_reconstruct_python` is
+    invoked as `[mesh_reconstruct_python, <real mesh_reconstruct.py path>,
+    "--host", ..., "--out", out_path]`, so this fake executable — not a
+    .py file run BY python, but a directly-executable stand-in for python
+    itself — ignores the real script path argument and just honours
+    --out, exactly mirroring what argv it would actually receive."""
+    import stat
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_interpreter = os.path.join(tmp_dir, "fake_interpreter")
+        with open(fake_interpreter, "w") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "out_path = sys.argv[sys.argv.index('--out') + 1]\n"
+                "with open(out_path, 'wb') as fh:\n"
+                "    fh.write(b'fake ply contents')\n"
+            )
+        os.chmod(fake_interpreter, os.stat(fake_interpreter).st_mode | stat.S_IEXEC)
+
+        handler = make_handler(
+            snapshot_fn=lambda: {"ok": True},
+            mesh_reconstruct_python=fake_interpreter,
+        )
+        r = _do_request(handler, "POST", "/reconstruct_mesh")
+        assert r.status == 200
+        assert r.header("Content-Type") == "application/octet-stream"
+        assert "room_mesh.ply" in r.header("Content-Disposition")
+        assert r.body == b"fake ply contents"
 
 
 def test_snapshot_fn_exception_returns_500_not_a_crash():
