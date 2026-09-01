@@ -643,8 +643,11 @@ resetScanButton.addEventListener("click", async () => {
 // index + dilation neighbours, see below), and PointCloudMap's cloud can
 // grow into the thousands. Subsampling keeps rebuilds responsive; the
 // point-cloud dots view still shows every point, this cap only affects the
-// coarser mesh reconstruction.
-const MESH_MAX_POINTS = 6000;
+// coarser mesh reconstruction. Raised alongside demo_explore.py's denser
+// depth-scan sampling and PointCloudMap's finer 10mm dedup — otherwise the
+// extra point density this session added would just get subsampled straight
+// back out here.
+const MESH_MAX_POINTS = 10000;
 
 // field[i] < isolation (80.0, MarchingCubes' default) counts as "inside"
 // the surface. addBall's metaball falloff (this file's first attempt) was

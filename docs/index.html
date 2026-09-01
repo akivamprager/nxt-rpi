@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout — an autonomous room-mapping robot</title>
+<meta name="description" content="A LEGO Mindstorms NXT + Raspberry Pi robot that explores a room on its own and builds a live 3D map you can watch and rotate in your browser.">
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --bg-alt: #f3f0e9;
+    --ink: #24211c;
+    --ink-soft: #5c574c;
+    --accent: #c1531f;
+    --accent-soft: #f0dccb;
+    --card: #ffffff;
+    --border: #e6e0d4;
+    --code-bg: #24211c;
+    --code-ink: #f3f0e9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    background: linear-gradient(180deg, var(--bg-alt), var(--bg));
+    padding: 72px 0 56px;
+    border-bottom: 1px solid var(--border);
+  }
+  .eyebrow {
+    display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+  }
+  h1 { font-size: 44px; line-height: 1.15; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .tagline { font-size: 19px; color: var(--ink-soft); max-width: 640px; margin: 0 0 32px; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px;
+    border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #a4471a; }
+  .btn-secondary { background: var(--card); color: var(--ink); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); }
+
+  section { padding: 56px 0; }
+  section.alt { background: var(--bg-alt); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  h2 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-soft); font-size: 17px; max-width: 640px; margin: 0 0 36px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  @media (max-width: 720px) {
+    .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    h1 { font-size: 32px; }
+    header.hero { padding: 48px 0 40px; }
+  }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 22px 24px;
+    /* min-width:0 is load-bearing: grid items default to min-width:auto,
+       which lets a child's intrinsic content size (here, the <pre> code
+       block's unwrapped command line) force this whole card — and the
+       grid track it sits in — wider than the layout, instead of the <pre>
+       scrolling internally the way its own overflow-x:auto intends. */
+    min-width: 0;
+  }
+  pre { max-width: 100%; }
+  .card h3 { margin: 0 0 8px; font-size: 17px; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: 14.5px; }
+  .card .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft);
+    color: var(--accent); font-weight: 700; font-size: 13px; margin-bottom: 10px;
+  }
+
+  .diagram { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+
+  pre {
+    background: var(--code-bg); color: var(--code-ink); padding: 16px 18px;
+    border-radius: 10px; overflow-x: auto; font-size: 14px; line-height: 1.5;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code { background: var(--accent-soft); color: #7a3110; padding: 1px 6px; border-radius: 5px; font-size: 0.92em; }
+
+  .status-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .status-table th, .status-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .status-table th { color: var(--ink-soft); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .pill-done { background: #e2f0e2; color: #2c6b2f; }
+  .pill-partial { background: #fbeecf; color: #8a6414; }
+  .pill-todo { background: #f1efe9; color: var(--ink-soft); }
+
+  .honesty-note {
+    display: flex; gap: 14px; background: var(--accent-soft); border-radius: 12px;
+    padding: 18px 20px; align-items: flex-start;
+  }
+  .honesty-note .icon { font-size: 22px; line-height: 1; }
+  .honesty-note p { margin: 0; font-size: 14.5px; color: #6b3417; }
+
+  footer { padding: 48px 0 64px; color: var(--ink-soft); font-size: 14px; }
+  footer a { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Open-source robotics project</span>
+    <h1>A LEGO robot that explores a room by itself — and builds a 3D map as it goes.</h1>
+    <p class="tagline">
+      Scout drives itself around a room, figures out where it's already been, and
+      turns what its camera sees into a live, rotatable 3D model — right in your
+      browser, no app to install. Everything here is real, runnable code, not a mockup.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://scout-demo.onrender.com/">▶ Watch it explore live</a>
+      <a class="btn btn-secondary" href="https://github.com/akivamprager/nxt-rpi">View source on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>What is this, in plain terms?</h2>
+    <p class="lede">
+      Picture a small robot on wheels, a bit like a robot vacuum. Instead of just
+      bumping around, Scout uses a rotating sensor turret to look around, figures
+      out what parts of the room it hasn't seen yet, and drives toward them —
+      completely on its own. As it goes, it builds up an honest, ever-improving
+      picture of the room: first a simple 2D floor plan, and now, a full 3D model
+      you can spin around and zoom into.
+    </p>
+    <div class="grid-3">
+      <div class="card">
+        <div class="step-num">1</div>
+        <h3>It looks around</h3>
+        <p>A rotating turret sweeps a sensor and camera across the room at each stop, like turning your head to check your surroundings.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">2</div>
+        <h3>It decides where to go</h3>
+        <p>It keeps a running map of "explored" vs. "unknown," and always heads toward the nearest unexplored edge.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">3</div>
+        <h3>It builds a 3D model</h3>
+        <p>Every scan adds real, colored points to a 3D point cloud — which gets turned into an actual mesh you can view like any 3D object.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>How the hardware fits together</h2>
+    <p class="lede">
+      Two computers doing two very different jobs — a deliberate split, not an
+      accident.
+    </p>
+    <div class="diagram">
+      <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+
+        <!-- NXT box -->
+        <rect x="20" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="110" y="125" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">NXT Brick</text>
+        <text x="110" y="147" text-anchor="middle" font-size="12" fill="#5c574c">Motors + wheels</text>
+        <text x="110" y="164" text-anchor="middle" font-size="12" fill="#5c574c">Ultrasonic sensor</text>
+        <text x="110" y="181" text-anchor="middle" font-size="12" fill="#5c574c">Turret motor</text>
+        <text x="110" y="198" text-anchor="middle" font-size="11" fill="#c1531f">"the body" — leJOS Java</text>
+
+        <!-- Bluetooth link -->
+        <line x1="200" y1="150" x2="290" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+        <text x="245" y="138" text-anchor="middle" font-size="11" fill="#5c574c">Bluetooth</text>
+
+        <!-- Pi box -->
+        <rect x="290" y="70" width="180" height="160" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="380" y="100" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">Raspberry Pi</text>
+        <text x="380" y="122" text-anchor="middle" font-size="12" fill="#5c574c">Camera module</text>
+        <text x="380" y="139" text-anchor="middle" font-size="12" fill="#5c574c">Mapping + planning</text>
+        <text x="380" y="156" text-anchor="middle" font-size="12" fill="#5c574c">Depth estimation</text>
+        <text x="380" y="173" text-anchor="middle" font-size="12" fill="#5c574c">3D reconstruction</text>
+        <text x="380" y="190" text-anchor="middle" font-size="12" fill="#5c574c">Web dashboard</text>
+        <text x="380" y="212" text-anchor="middle" font-size="11" fill="#c1531f">"the brain" — Python</text>
+
+        <!-- WiFi link -->
+        <line x1="470" y1="150" x2="560" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="515" y="138" text-anchor="middle" font-size="11" fill="#5c574c">Wi-Fi / HTTP</text>
+
+        <!-- Browser box -->
+        <rect x="560" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="650" y="130" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">Your browser</text>
+        <text x="650" y="152" text-anchor="middle" font-size="12" fill="#5c574c">Live 2D map</text>
+        <text x="650" y="169" text-anchor="middle" font-size="12" fill="#5c574c">Live rotatable 3D scene</text>
+        <text x="650" y="186" text-anchor="middle" font-size="11" fill="#c1531f">no install needed</text>
+
+        <text x="380" y="270" text-anchor="middle" font-size="12" fill="#8a8578">One turret motor carries both the ultrasonic sensor and the camera — one motor, two senses.</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it decides what to do next</h2>
+    <p class="lede">
+      Scout's brain runs a simple, repeating loop — the same one you'd use to
+      search a dark room by feel, just automated.
+    </p>
+    <div class="diagram">
+      <svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+        <g>
+          <rect x="20"  y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="95" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Sweep</text>
+          <text x="95" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Look around from here</text>
+        </g>
+        <line x1="170" y1="110" x2="215" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <g>
+          <rect x="215" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="290" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Plan</text>
+          <text x="290" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Pick nearest unexplored spot</text>
+        </g>
+        <line x1="365" y1="110" x2="410" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <g>
+          <rect x="410" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="485" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Drive</text>
+          <text x="485" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Move toward it, dodge obstacles</text>
+        </g>
+        <line x1="560" y1="110" x2="605" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <g>
+          <rect x="605" y="70" width="135" height="80" rx="12" fill="#e2f0e2"/>
+          <text x="672" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#2c6b2f">Repeat</text>
+          <text x="672" y="125" text-anchor="middle" font-size="11" fill="#2c6b2f">...until fully mapped</text>
+        </g>
+        <path d="M 672 150 C 672 200, 95 200, 95 150" fill="none" stroke="#c1531f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow2)"/>
+        <text x="380" y="200" text-anchor="middle" font-size="11" fill="#8a8578">back to Sweep, from the new spot</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>Turning camera scans into a 3D room</h2>
+    <p class="lede">
+      This is the newest and most visual part of the project. Each time Scout
+      looks around, it doesn't just check "is something in my way" — it estimates
+      how far away everything in view actually is, and colors each point with
+      what the camera really saw.
+    </p>
+    <div class="diagram">
+      <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+        <rect x="20" y="55" width="170" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="105" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Camera frame</text>
+        <text x="105" y="110" text-anchor="middle" font-size="11" fill="#5c574c">one photo, one moment</text>
+
+        <line x1="190" y1="100" x2="230" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+
+        <rect x="230" y="55" width="170" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="315" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Depth estimate</text>
+        <text x="315" y="105" text-anchor="middle" font-size="11" fill="#5c574c">how far is each pixel?</text>
+        <text x="315" y="122" text-anchor="middle" font-size="11" fill="#5c574c">(a small ML model)</text>
+
+        <line x1="400" y1="100" x2="440" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+
+        <rect x="440" y="55" width="150" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="515" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Colored points</text>
+        <text x="515" y="105" text-anchor="middle" font-size="11" fill="#5c574c">placed in 3D space,</text>
+        <text x="515" y="122" text-anchor="middle" font-size="11" fill="#5c574c">real camera colour</text>
+
+        <line x1="590" y1="100" x2="630" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+
+        <rect x="630" y="55" width="115" height="90" rx="12" fill="#e2f0e2"/>
+        <text x="687" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#2c6b2f">3D mesh</text>
+        <text x="687" y="110" text-anchor="middle" font-size="11" fill="#2c6b2f">a real, solid</text>
+        <text x="687" y="125" text-anchor="middle" font-size="11" fill="#2c6b2f">3D model</text>
+
+        <text x="380" y="175" text-anchor="middle" font-size="11" fill="#8a8578">Repeated on every scan, from every position Scout visits, and merged together over time.</text>
+      </svg>
+    </div>
+
+    <div style="height: 20px"></div>
+    <div class="honesty-note">
+      <span class="icon">🧭</span>
+      <p>
+        <strong>A deliberate honesty rule runs through this whole project:</strong> the
+        map you see is only ever built from what the robot has actually scanned —
+        never filled in from a "ground truth" the real robot couldn't possibly know.
+        The 3D viewer even labels which parts are the honestly-earned reconstruction
+        versus a reference room shown for a visually complete demo.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Try it yourself</h2>
+    <p class="lede">No hardware needed — the live demo runs a full, faithful simulation using the exact same code that will drive the real robot.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Watch it in your browser</h3>
+        <p style="margin-bottom: 14px;">
+          The fastest way in: an already-running demo, exploring a simulated room live.
+        </p>
+        <a class="btn btn-primary" href="https://scout-demo.onrender.com/">▶ Open the live demo</a>
+      </div>
+      <div class="card">
+        <h3>Run it on your own machine</h3>
+        <p style="margin-bottom: 14px;">Standard library only — nothing to install.</p>
+        <pre><code>git clone https://github.com/akivamprager/nxt-rpi
+cd nxt-rpi
+python3 pi/tools/demo_explore.py</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>Project status</h2>
+    <p class="lede">An honest accounting of what's done, what's tested, and what's still waiting on physical hardware.</p>
+    <table class="status-table">
+      <tr><th>Phase</th><th>What</th><th>Status</th></tr>
+      <tr><td>Firmware</td><td>NXT motor control, sensors, safety stop (leJOS/Java)</td><td><span class="pill pill-partial">Written &amp; tested, awaiting hardware</span></td></tr>
+      <tr><td>Robot API</td><td>Bluetooth protocol, transport, telemetry</td><td><span class="pill pill-done">Done &amp; tested</span></td></tr>
+      <tr><td>Localization</td><td>ArUco marker detection, pose correction</td><td><span class="pill pill-partial">Math &amp; detection tested, real camera pending</span></td></tr>
+      <tr><td>Mapping &amp; exploration</td><td>2D occupancy grid, frontier-based planning</td><td><span class="pill pill-done">Done, tested, demoed live</span></td></tr>
+      <tr><td>3D reconstruction</td><td>Depth estimation, colorized point clouds, mesh generation</td><td><span class="pill pill-done">Done, tested, live in the demo</span></td></tr>
+      <tr><td>IoT dashboard</td><td>Full MQTT + GPIO status LEDs</td><td><span class="pill pill-todo">Not started</span></td></tr>
+      <tr><td>Voice agent</td><td>Talk to the robot</td><td><span class="pill pill-todo">Not started</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Under the hood</h2>
+    <p class="lede">For the technically curious — the full write-up lives in the repo's README and docs/.</p>
+    <div class="grid-3">
+      <div class="card">
+        <h3>Firmware</h3>
+        <p>leJOS Java on the NXT brick: real-time motor control and a custom binary protocol over Bluetooth, byte-for-byte cross-checked against the Python side.</p>
+      </div>
+      <div class="card">
+        <h3>Robot brain</h3>
+        <p>Pure-Python mapping (log-odds occupancy grid), frontier exploration, and a mission state machine — no external dependencies.</p>
+      </div>
+      <div class="card">
+        <h3>3D reconstruction</h3>
+        <p>Monocular depth estimation (MiDaS via ONNX), colorized point clouds, live in-browser mesh (Three.js) and offline high-fidelity mesh export (Open3D/Poisson).</p>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+    <p>
+      Read the full technical README on
+      <a href="https://github.com/akivamprager/nxt-rpi#readme">GitHub</a>, or dig into
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/BUILD.md">docs/BUILD.md</a>,
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/SETUP.md">docs/SETUP.md</a>, and
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/DEPLOY.md">docs/DEPLOY.md</a>.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><strong>Scout</strong> — an open-source LEGO Mindstorms NXT + Raspberry Pi room-exploration robot.</p>
+    <p><a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

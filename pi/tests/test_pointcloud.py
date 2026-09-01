@@ -69,7 +69,7 @@ def test_max_points_caps_growth():
 
 
 def test_clear_empties_the_map():
-    pc = PointCloudMap()  # default 20mm resolution
+    pc = PointCloudMap()  # default 10mm resolution
     pc.add_points([(0.0, 0.0, 0.0, 1, 1, 1), (500.0, 0.0, 0.0, 2, 2, 2)])  # separate cells
     assert len(pc) == 2
     pc.clear()

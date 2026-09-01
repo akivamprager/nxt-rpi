@@ -178,8 +178,13 @@ def make_depth_scanner(room: SimulatedRoom):
             pitch_deg=DEPTH_CAMERA_PITCH_DEG,
             h_fov_deg=60.0,
             v_fov_deg=90.0,
-            h_samples=14,
-            v_samples=16,
+            # Raised from 14x16 (224 rays/scan) to 24x26 (624/scan, ~2.8x):
+            # denser per-point colour coverage on the reconstructed mesh,
+            # paired with PointCloudMap's finer 10mm dedup resolution (was
+            # 20mm) so more of these extra samples actually survive as
+            # distinct points instead of collapsing into existing cells.
+            h_samples=24,
+            v_samples=26,
             max_range_mm=2500.0,
         )
 

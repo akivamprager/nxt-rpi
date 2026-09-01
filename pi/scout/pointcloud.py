@@ -37,7 +37,7 @@ class PointCloudMap:
     #: payload bounded by the room's surface area at this resolution, not by
     #: how many scans have run. A real depth sensor wouldn't have infinite
     #: precision either, so this isn't purely a memory hack.
-    resolution_mm: float = 20.0
+    resolution_mm: float = 10.0
     #: A hard backstop against unbounded growth regardless of dedup — cheap
     #: insurance for a public, long-running (SCOUT_LOOP) deployment.
     max_points: int = 200_000
