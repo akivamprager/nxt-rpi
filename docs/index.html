@@ -25,8 +25,21 @@
     color: var(--ink);
     font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
+  [lang="he"] { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", Arial, sans-serif; }
   a { color: var(--accent); }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  #langToggle {
+    position: fixed; top: 14px; z-index: 50;
+    inset-inline-end: 16px;
+    display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  }
+  #langToggle button {
+    border: none; background: transparent; padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+  }
+  #langToggle button.active { background: var(--accent); color: #fff; }
 
   header.hero {
     background: linear-gradient(180deg, var(--bg-alt), var(--bg));
@@ -37,6 +50,7 @@
     display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
   }
+  [lang="he"] .eyebrow { letter-spacing: 0; }
   h1 { font-size: 44px; line-height: 1.15; margin: 0 0 18px; letter-spacing: -0.01em; }
   .tagline { font-size: 19px; color: var(--ink-soft); max-width: 640px; margin: 0 0 32px; }
   .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -88,13 +102,15 @@
   pre {
     background: var(--code-bg); color: var(--code-ink); padding: 16px 18px;
     border-radius: 10px; overflow-x: auto; font-size: 14px; line-height: 1.5;
+    direction: ltr; text-align: left;
   }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   p code, li code { background: var(--accent-soft); color: #7a3110; padding: 1px 6px; border-radius: 5px; font-size: 0.92em; }
 
   .status-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
-  .status-table th, .status-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .status-table th, .status-table td { text-align: start; padding: 10px 12px; border-bottom: 1px solid var(--border); }
   .status-table th { color: var(--ink-soft); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  [lang="he"] .status-table th { letter-spacing: 0; }
   .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
   .pill-done { background: #e2f0e2; color: #2c6b2f; }
   .pill-partial { background: #fbeecf; color: #8a6414; }
@@ -109,9 +125,19 @@
 
   footer { padding: 48px 0 64px; color: var(--ink-soft); font-size: 14px; }
   footer a { color: var(--ink); }
+
+  .math-link-row { margin-top: 20px; }
 </style>
 </head>
 <body>
+
+<div id="langToggle">
+  <button id="langBtnEn" class="active" data-lang="en">EN</button>
+  <button id="langBtnHe" data-lang="he">עברית</button>
+</div>
+
+<!-- ================================================================ ENGLISH ================================================================ -->
+<div id="content-en" lang="en" dir="ltr">
 
 <header class="hero">
   <div class="wrap">
@@ -163,19 +189,14 @@
 <section class="alt">
   <div class="wrap">
     <h2>How the hardware fits together</h2>
-    <p class="lede">
-      Two computers doing two very different jobs — a deliberate split, not an
-      accident.
-    </p>
+    <p class="lede">Two computers doing two very different jobs — a deliberate split, not an accident.</p>
     <div class="diagram">
       <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker id="arrow-en" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
           </marker>
         </defs>
-
-        <!-- NXT box -->
         <rect x="20" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
         <text x="110" y="125" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">NXT Brick</text>
         <text x="110" y="147" text-anchor="middle" font-size="12" fill="#5c574c">Motors + wheels</text>
@@ -183,11 +204,9 @@
         <text x="110" y="181" text-anchor="middle" font-size="12" fill="#5c574c">Turret motor</text>
         <text x="110" y="198" text-anchor="middle" font-size="11" fill="#c1531f">"the body" — leJOS Java</text>
 
-        <!-- Bluetooth link -->
-        <line x1="200" y1="150" x2="290" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+        <line x1="200" y1="150" x2="290" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow-en)" marker-start="url(#arrow-en)"/>
         <text x="245" y="138" text-anchor="middle" font-size="11" fill="#5c574c">Bluetooth</text>
 
-        <!-- Pi box -->
         <rect x="290" y="70" width="180" height="160" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
         <text x="380" y="100" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">Raspberry Pi</text>
         <text x="380" y="122" text-anchor="middle" font-size="12" fill="#5c574c">Camera module</text>
@@ -197,11 +216,9 @@
         <text x="380" y="190" text-anchor="middle" font-size="12" fill="#5c574c">Web dashboard</text>
         <text x="380" y="212" text-anchor="middle" font-size="11" fill="#c1531f">"the brain" — Python</text>
 
-        <!-- WiFi link -->
-        <line x1="470" y1="150" x2="560" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow)"/>
+        <line x1="470" y1="150" x2="560" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow-en)"/>
         <text x="515" y="138" text-anchor="middle" font-size="11" fill="#5c574c">Wi-Fi / HTTP</text>
 
-        <!-- Browser box -->
         <rect x="560" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
         <text x="650" y="130" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">Your browser</text>
         <text x="650" y="152" text-anchor="middle" font-size="12" fill="#5c574c">Live 2D map</text>
@@ -217,14 +234,11 @@
 <section>
   <div class="wrap">
     <h2>How it decides what to do next</h2>
-    <p class="lede">
-      Scout's brain runs a simple, repeating loop — the same one you'd use to
-      search a dark room by feel, just automated.
-    </p>
+    <p class="lede">Scout's brain runs a simple, repeating loop — the same one you'd use to search a dark room by feel, just automated.</p>
     <div class="diagram">
       <svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
         <defs>
-          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow2-en" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
           </marker>
         </defs>
@@ -233,25 +247,25 @@
           <text x="95" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Sweep</text>
           <text x="95" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Look around from here</text>
         </g>
-        <line x1="170" y1="110" x2="215" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <line x1="170" y1="110" x2="215" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-en)"/>
         <g>
           <rect x="215" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
           <text x="290" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Plan</text>
           <text x="290" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Pick nearest unexplored spot</text>
         </g>
-        <line x1="365" y1="110" x2="410" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <line x1="365" y1="110" x2="410" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-en)"/>
         <g>
           <rect x="410" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
           <text x="485" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">Drive</text>
           <text x="485" y="125" text-anchor="middle" font-size="11" fill="#7a3110">Move toward it, dodge obstacles</text>
         </g>
-        <line x1="560" y1="110" x2="605" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2)"/>
+        <line x1="560" y1="110" x2="605" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-en)"/>
         <g>
           <rect x="605" y="70" width="135" height="80" rx="12" fill="#e2f0e2"/>
           <text x="672" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#2c6b2f">Repeat</text>
           <text x="672" y="125" text-anchor="middle" font-size="11" fill="#2c6b2f">...until fully mapped</text>
         </g>
-        <path d="M 672 150 C 672 200, 95 200, 95 150" fill="none" stroke="#c1531f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow2)"/>
+        <path d="M 672 150 C 672 200, 95 200, 95 150" fill="none" stroke="#c1531f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow2-en)"/>
         <text x="380" y="200" text-anchor="middle" font-size="11" fill="#8a8578">back to Sweep, from the new spot</text>
       </svg>
     </div>
@@ -270,7 +284,7 @@
     <div class="diagram">
       <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
         <defs>
-          <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow3-en" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
           </marker>
         </defs>
@@ -278,21 +292,21 @@
         <text x="105" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Camera frame</text>
         <text x="105" y="110" text-anchor="middle" font-size="11" fill="#5c574c">one photo, one moment</text>
 
-        <line x1="190" y1="100" x2="230" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+        <line x1="190" y1="100" x2="230" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-en)"/>
 
         <rect x="230" y="55" width="170" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
         <text x="315" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Depth estimate</text>
         <text x="315" y="105" text-anchor="middle" font-size="11" fill="#5c574c">how far is each pixel?</text>
         <text x="315" y="122" text-anchor="middle" font-size="11" fill="#5c574c">(a small ML model)</text>
 
-        <line x1="400" y1="100" x2="440" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+        <line x1="400" y1="100" x2="440" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-en)"/>
 
         <rect x="440" y="55" width="150" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
         <text x="515" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">Colored points</text>
         <text x="515" y="105" text-anchor="middle" font-size="11" fill="#5c574c">placed in 3D space,</text>
         <text x="515" y="122" text-anchor="middle" font-size="11" fill="#5c574c">real camera colour</text>
 
-        <line x1="590" y1="100" x2="630" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3)"/>
+        <line x1="590" y1="100" x2="630" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-en)"/>
 
         <rect x="630" y="55" width="115" height="90" rx="12" fill="#e2f0e2"/>
         <text x="687" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#2c6b2f">3D mesh</text>
@@ -314,6 +328,10 @@
         versus a reference room shown for a visually complete demo.
       </p>
     </div>
+
+    <div class="math-link-row">
+      <a class="btn btn-secondary" href="math.html">∑ Read the math behind it</a>
+    </div>
   </div>
 </section>
 
@@ -324,9 +342,7 @@
     <div class="grid-2">
       <div class="card">
         <h3>Watch it in your browser</h3>
-        <p style="margin-bottom: 14px;">
-          The fastest way in: an already-running demo, exploring a simulated room live.
-        </p>
+        <p style="margin-bottom: 14px;">The fastest way in: an already-running demo, exploring a simulated room live.</p>
         <a class="btn btn-primary" href="https://scout-demo.onrender.com/">▶ Open the live demo</a>
       </div>
       <div class="card">
@@ -377,6 +393,10 @@ python3 pi/tools/demo_explore.py</code></pre>
     </div>
     <div style="height:20px"></div>
     <p>
+      Want the actual equations — rotation matrices, log-odds updates, the pinhole
+      camera model, marching cubes? See <a href="math.html">the math page</a>.
+    </p>
+    <p>
       Read the full technical README on
       <a href="https://github.com/akivamprager/nxt-rpi#readme">GitHub</a>, or dig into
       <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/BUILD.md">docs/BUILD.md</a>,
@@ -392,6 +412,321 @@ python3 pi/tools/demo_explore.py</code></pre>
     <p><a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
   </div>
 </footer>
+
+</div>
+<!-- ============================================================== /ENGLISH ============================================================== -->
+
+<!-- ================================================================ HEBREW ================================================================ -->
+<div id="content-he" lang="he" dir="rtl" style="display:none;">
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">פרויקט רובוטיקה בקוד פתוח</span>
+    <h1>רובוט לגו שחוקר חדר בעצמו — ובונה מפה תלת-ממדית תוך כדי תנועה.</h1>
+    <p class="tagline">
+      סקאוט נוסע בעצמו סביב החדר, מבין איפה הוא כבר היה, והופך את מה שהמצלמה
+      שלו רואה למודל תלת-ממדי חי שאפשר לסובב — ישירות בדפדפן, בלי להתקין שום
+      אפליקציה. הכול כאן קוד אמיתי שרץ בפועל, לא הדגמה מזויפת.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://scout-demo.onrender.com/">▶ צפו בו חוקר בזמן אמת</a>
+      <a class="btn btn-secondary" href="https://github.com/akivamprager/nxt-rpi">קוד המקור ב-GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>מה זה בעצם, במילים פשוטות?</h2>
+    <p class="lede">
+      דמיינו רובוט קטן על גלגלים, קצת כמו שואב אבק רובוטי. במקום סתם להתנגש
+      בקירות, לסקאוט יש צריח מסתובב עם חיישנים שמאפשר לו להסתכל סביב, להבין
+      אילו חלקים בחדר הוא עדיין לא ראה, ולנסוע אליהם — לגמרי בעצמו. תוך כדי,
+      הוא בונה תמונה כנה ומשתפרת של החדר: קודם תרשים רצפה דו-ממדי פשוט, ועכשיו
+      — מודל תלת-ממדי מלא שאפשר לסובב ולהתקרב אליו.
+    </p>
+    <div class="grid-3">
+      <div class="card">
+        <div class="step-num">1</div>
+        <h3>הוא מסתכל סביב</h3>
+        <p>צריח מסתובב סורק את החדר בעזרת חיישן ומצלמה בכל עצירה, בדיוק כמו שאתם מסובבים את הראש כדי לבדוק מה מסביבכם.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">2</div>
+        <h3>הוא מחליט לאן ללכת</h3>
+        <p>הוא שומר מפה שוטפת של "נחקר" מול "לא ידוע", ותמיד פונה לעבר הקצה הקרוב ביותר שעדיין לא נחקר.</p>
+      </div>
+      <div class="card">
+        <div class="step-num">3</div>
+        <h3>הוא בונה מודל תלת-ממדי</h3>
+        <p>כל סריקה מוסיפה נקודות אמיתיות וצבעוניות לענן נקודות תלת-ממדי — שהופך לרשת (mesh) אמיתית שאפשר לצפות בה כמו בכל אובייקט תלת-ממדי.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>איך החומרה מתחברת</h2>
+    <p class="lede">שני מחשבים שעושים שתי עבודות שונות לגמרי — חלוקה מכוונת, לא מקרית.</p>
+    <div class="diagram" dir="ltr">
+      <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow-he" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+        <rect x="20" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="110" y="125" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">לבנת NXT</text>
+        <text x="110" y="147" text-anchor="middle" font-size="12" fill="#5c574c">מנועים + גלגלים</text>
+        <text x="110" y="164" text-anchor="middle" font-size="12" fill="#5c574c">חיישן אולטרסוני</text>
+        <text x="110" y="181" text-anchor="middle" font-size="12" fill="#5c574c">מנוע צריח</text>
+        <text x="110" y="198" text-anchor="middle" font-size="11" fill="#c1531f">"הגוף" — leJOS Java</text>
+
+        <line x1="200" y1="150" x2="290" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow-he)" marker-start="url(#arrow-he)"/>
+        <text x="245" y="138" text-anchor="middle" font-size="11" fill="#5c574c">בלוטות'</text>
+
+        <rect x="290" y="70" width="180" height="160" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="380" y="100" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">Raspberry Pi</text>
+        <text x="380" y="122" text-anchor="middle" font-size="12" fill="#5c574c">מודול מצלמה</text>
+        <text x="380" y="139" text-anchor="middle" font-size="12" fill="#5c574c">מיפוי + תכנון</text>
+        <text x="380" y="156" text-anchor="middle" font-size="12" fill="#5c574c">הערכת עומק</text>
+        <text x="380" y="173" text-anchor="middle" font-size="12" fill="#5c574c">שחזור תלת-ממדי</text>
+        <text x="380" y="190" text-anchor="middle" font-size="12" fill="#5c574c">לוח בקרה באינטרנט</text>
+        <text x="380" y="212" text-anchor="middle" font-size="11" fill="#c1531f">"המוח" — Python</text>
+
+        <line x1="470" y1="150" x2="560" y2="150" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow-he)"/>
+        <text x="515" y="138" text-anchor="middle" font-size="11" fill="#5c574c">Wi-Fi / HTTP</text>
+
+        <rect x="560" y="90" width="180" height="120" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="650" y="130" text-anchor="middle" font-size="15" font-weight="700" fill="#24211c">הדפדפן שלכם</text>
+        <text x="650" y="152" text-anchor="middle" font-size="12" fill="#5c574c">מפה דו-ממדית חיה</text>
+        <text x="650" y="169" text-anchor="middle" font-size="12" fill="#5c574c">סצנה תלת-ממדית חיה שניתן לסובב</text>
+        <text x="650" y="186" text-anchor="middle" font-size="11" fill="#c1531f">לא נדרשת התקנה</text>
+
+        <text x="380" y="270" text-anchor="middle" font-size="12" fill="#8a8578">מנוע צריח אחד נושא גם את החיישן האולטרסוני וגם את המצלמה — מנוע אחד, שני חושים.</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>איך הוא מחליט מה לעשות הלאה</h2>
+    <p class="lede">המוח של סקאוט מריץ לולאה פשוטה וחוזרת — אותה לולאה שהייתם משתמשים בה כדי לחפש בחדר חשוך במישוש, רק אוטומטית.</p>
+    <div class="diagram" dir="ltr">
+      <svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow2-he" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+        <g>
+          <rect x="20"  y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="95" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">סריקה</text>
+          <text x="95" y="125" text-anchor="middle" font-size="11" fill="#7a3110">להסתכל סביב מכאן</text>
+        </g>
+        <line x1="170" y1="110" x2="215" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-he)"/>
+        <g>
+          <rect x="215" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="290" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">תכנון</text>
+          <text x="290" y="125" text-anchor="middle" font-size="11" fill="#7a3110">בחירת הנקודה הלא-נחקרת הקרובה</text>
+        </g>
+        <line x1="365" y1="110" x2="410" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-he)"/>
+        <g>
+          <rect x="410" y="70" width="150" height="80" rx="12" fill="#f0dccb"/>
+          <text x="485" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#7a3110">נסיעה</text>
+          <text x="485" y="125" text-anchor="middle" font-size="11" fill="#7a3110">נסיעה לעברה, התחמקות ממכשולים</text>
+        </g>
+        <line x1="560" y1="110" x2="605" y2="110" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow2-he)"/>
+        <g>
+          <rect x="605" y="70" width="135" height="80" rx="12" fill="#e2f0e2"/>
+          <text x="672" y="105" text-anchor="middle" font-size="14" font-weight="700" fill="#2c6b2f">חזרה</text>
+          <text x="672" y="125" text-anchor="middle" font-size="11" fill="#2c6b2f">...עד שהחדר ממופה במלואו</text>
+        </g>
+        <path d="M 672 150 C 672 200, 95 200, 95 150" fill="none" stroke="#c1531f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow2-he)"/>
+        <text x="380" y="200" text-anchor="middle" font-size="11" fill="#8a8578">בחזרה לסריקה, מהנקודה החדשה</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>הפיכת סריקות מצלמה לחדר תלת-ממדי</h2>
+    <p class="lede">
+      זה החלק החדש והוויזואלי ביותר בפרויקט. בכל פעם שסקאוט מסתכל סביב, הוא לא
+      רק בודק "האם משהו חוסם אותי" — הוא מעריך כמה רחוק באמת נמצא כל דבר בשדה
+      הראייה, וצובע כל נקודה בצבע שהמצלמה באמת ראתה.
+    </p>
+    <div class="diagram" dir="ltr">
+      <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif">
+        <defs>
+          <marker id="arrow3-he" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#c1531f"/>
+          </marker>
+        </defs>
+        <rect x="20" y="55" width="170" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="105" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">פריים מצלמה</text>
+        <text x="105" y="110" text-anchor="middle" font-size="11" fill="#5c574c">תמונה אחת, רגע אחד</text>
+
+        <line x1="190" y1="100" x2="230" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-he)"/>
+
+        <rect x="230" y="55" width="170" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="315" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">הערכת עומק</text>
+        <text x="315" y="105" text-anchor="middle" font-size="11" fill="#5c574c">כמה רחוק כל פיקסל?</text>
+        <text x="315" y="122" text-anchor="middle" font-size="11" fill="#5c574c">(מודל למידת-מכונה קטן)</text>
+
+        <line x1="400" y1="100" x2="440" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-he)"/>
+
+        <rect x="440" y="55" width="150" height="90" rx="12" fill="#ffffff" stroke="#e6e0d4" stroke-width="1.5"/>
+        <text x="515" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#24211c">נקודות צבעוניות</text>
+        <text x="515" y="105" text-anchor="middle" font-size="11" fill="#5c574c">ממוקמות במרחב תלת-ממדי,</text>
+        <text x="515" y="122" text-anchor="middle" font-size="11" fill="#5c574c">בצבע אמיתי מהמצלמה</text>
+
+        <line x1="590" y1="100" x2="630" y2="100" stroke="#c1531f" stroke-width="2" marker-end="url(#arrow3-he)"/>
+
+        <rect x="630" y="55" width="115" height="90" rx="12" fill="#e2f0e2"/>
+        <text x="687" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#2c6b2f">רשת תלת-ממדית</text>
+        <text x="687" y="110" text-anchor="middle" font-size="11" fill="#2c6b2f">מודל תלת-ממדי</text>
+        <text x="687" y="125" text-anchor="middle" font-size="11" fill="#2c6b2f">אמיתי ומוצק</text>
+
+        <text x="380" y="175" text-anchor="middle" font-size="11" fill="#8a8578">חוזר על עצמו בכל סריקה, מכל מיקום שסקאוט מבקר בו, ומתמזג יחד לאורך זמן.</text>
+      </svg>
+    </div>
+
+    <div style="height: 20px"></div>
+    <div class="honesty-note">
+      <span class="icon">🧭</span>
+      <p>
+        <strong>כלל יושר מכוון עובר לאורך כל הפרויקט הזה:</strong> המפה שאתם
+        רואים נבנית אך ורק ממה שהרובוט באמת סרק — ולעולם לא מולאה מ"אמת קרקע"
+        שהרובוט האמיתי לא יכול היה לדעת. הצופה התלת-ממדי אפילו מסמן אילו
+        חלקים הם השחזור שנצבר ביושר, לעומת חדר לדוגמה שמוצג להדגמה ויזואלית
+        שלמה.
+      </p>
+    </div>
+
+    <div class="math-link-row">
+      <a class="btn btn-secondary" href="math.html">∑ קראו את המתמטיקה שמאחורי זה</a>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>נסו בעצמכם</h2>
+    <p class="lede">אין צורך בחומרה — ההדגמה החיה מריצה סימולציה מלאה ונאמנה באמצעות אותו קוד בדיוק שיפעיל את הרובוט האמיתי.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>צפו בדפדפן שלכם</h3>
+        <p style="margin-bottom: 14px;">הדרך המהירה ביותר: הדגמה שכבר רצה, חוקרת חדר מדומה בזמן אמת.</p>
+        <a class="btn btn-primary" href="https://scout-demo.onrender.com/">▶ פתחו את ההדגמה החיה</a>
+      </div>
+      <div class="card">
+        <h3>הריצו על המחשב שלכם</h3>
+        <p style="margin-bottom: 14px;">ספרייה סטנדרטית בלבד — אין מה להתקין.</p>
+        <pre dir="ltr"><code>git clone https://github.com/akivamprager/nxt-rpi
+cd nxt-rpi
+python3 pi/tools/demo_explore.py</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>סטטוס הפרויקט</h2>
+    <p class="lede">תיאור כנה של מה שהושלם, מה שנבדק, ומה שעדיין ממתין לחומרה פיזית.</p>
+    <table class="status-table">
+      <tr><th>שלב</th><th>מה</th><th>סטטוס</th></tr>
+      <tr><td>קושחה</td><td>בקרת מנועים, חיישנים, עצירת בטיחות ב-NXT (leJOS/Java)</td><td><span class="pill pill-partial">נכתב ונבדק, ממתין לחומרה</span></td></tr>
+      <tr><td>ממשק הרובוט</td><td>פרוטוקול בלוטות', שכבת תקשורת, טלמטריה</td><td><span class="pill pill-done">הושלם ונבדק</span></td></tr>
+      <tr><td>מיקום (לוקליזציה)</td><td>זיהוי סמני ArUco, תיקון תנוחה</td><td><span class="pill pill-partial">המתמטיקה והזיהוי נבדקו, ממתין למצלמה</span></td></tr>
+      <tr><td>מיפוי וחקירה</td><td>רשת תפוסה דו-ממדית, תכנון מבוסס-חזית</td><td><span class="pill pill-done">הושלם, נבדק, הודגם בזמן אמת</span></td></tr>
+      <tr><td>שחזור תלת-ממדי</td><td>הערכת עומק, ענני נקודות צבעוניים, יצירת רשת</td><td><span class="pill pill-done">הושלם, נבדק, פעיל בהדגמה</span></td></tr>
+      <tr><td>לוח בקרה IoT</td><td>MQTT מלא + נוריות סטטוס GPIO</td><td><span class="pill pill-todo">טרם התחיל</span></td></tr>
+      <tr><td>סוכן קולי</td><td>לדבר עם הרובוט</td><td><span class="pill pill-todo">טרם התחיל</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>מתחת למכסה המנוע</h2>
+    <p class="lede">לסקרנים הטכניים — התיעוד המלא נמצא בקובץ ה-README של המאגר ובתיקיית docs/.</p>
+    <div class="grid-3">
+      <div class="card">
+        <h3>קושחה</h3>
+        <p>leJOS Java על לבנת ה-NXT: בקרת מנועים בזמן אמת ופרוטוקול בינארי מותאם אישית מעל בלוטות', שנבדק בית-אחר-בית מול צד ה-Python.</p>
+      </div>
+      <div class="card">
+        <h3>מוח הרובוט</h3>
+        <p>מיפוי ב-Python טהור (רשת תפוסה מבוססת log-odds), חקירת חזיתות, ומכונת מצבים למשימה — ללא תלויות חיצוניות.</p>
+      </div>
+      <div class="card">
+        <h3>שחזור תלת-ממדי</h3>
+        <p>הערכת עומק ממצלמה בודדת (MiDaS דרך ONNX), ענני נקודות צבעוניים, רשת תלת-ממדית חיה בדפדפן (Three.js) וייצוא רשת באיכות גבוהה במצב לא מקוון (Open3D/Poisson).</p>
+      </div>
+    </div>
+    <div style="height:20px"></div>
+    <p>
+      רוצים את המשוואות עצמן — מטריצות סיבוב, עדכוני log-odds, מודל המצלמה
+      החדית, marching cubes? ראו <a href="math.html">את עמוד המתמטיקה</a>.
+    </p>
+    <p>
+      קראו את ה-README הטכני המלא ב-
+      <a href="https://github.com/akivamprager/nxt-rpi#readme">GitHub</a>, או העמיקו בקבצים
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/BUILD.md">docs/BUILD.md</a>,
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/SETUP.md">docs/SETUP.md</a>, ו-
+      <a href="https://github.com/akivamprager/nxt-rpi/blob/main/docs/DEPLOY.md">docs/DEPLOY.md</a>.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><strong>Scout</strong> — רובוט חקר חדרים בקוד פתוח, מבוסס LEGO Mindstorms NXT ו-Raspberry Pi.</p>
+    <p><a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
+  </div>
+</footer>
+
+</div>
+<!-- ============================================================== /HEBREW ============================================================== -->
+
+<script>
+  const LANG_KEY = "scout_docs_lang";
+  const enBlock = document.getElementById("content-en");
+  const heBlock = document.getElementById("content-he");
+  const btnEn = document.getElementById("langBtnEn");
+  const btnHe = document.getElementById("langBtnHe");
+
+  function setLang(lang) {
+    const isHe = lang === "he";
+    enBlock.style.display = isHe ? "none" : "";
+    heBlock.style.display = isHe ? "" : "none";
+    btnEn.classList.toggle("active", !isHe);
+    btnHe.classList.toggle("active", isHe);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isHe ? "rtl" : "ltr";
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch (err) {
+      // Private browsing or similar — fine, it just won't remember next visit.
+    }
+  }
+
+  btnEn.addEventListener("click", () => setLang("en"));
+  btnHe.addEventListener("click", () => setLang("he"));
+
+  let initial = "en";
+  try {
+    initial = localStorage.getItem(LANG_KEY) || "en";
+  } catch (err) {
+    // Fall back to English.
+  }
+  setLang(initial);
+</script>
 
 </body>
 </html>

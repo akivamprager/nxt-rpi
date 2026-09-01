@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout — the math, from the ground up</title>
+<meta name="description" content="A complete, derived-from-first-principles account of every equation in Scout: rigid transforms, Bayesian occupancy mapping, ray casting, the pinhole camera model, and isosurface extraction.">
+<script>
+  MathJax = {
+    tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] },
+    startup: {
+      pageReady() {
+        // MathJax's CHTML renderer centres long equations by setting an
+        // internal RTL context on its own wrapper — harmless on its own,
+        // but it makes an ancestor .eq-block with overflow-x:auto start
+        // scrolled to show the RIGHT edge of a too-wide equation instead
+        // of the left (confirmed live: scrollLeft initialized to exactly
+        // scrollWidth-clientWidth, not 0). Reset scroll position after
+        // typesetting finishes rather than fighting MathJax's own CSS.
+        return MathJax.startup.defaultPageReady().then(() => {
+          document.querySelectorAll(".eq-block").forEach((el) => { el.scrollLeft = 0; });
+        });
+      },
+    },
+  };
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root {
+    --bg: #fbfaf7; --bg-alt: #f3f0e9; --ink: #24211c; --ink-soft: #5c574c;
+    --accent: #c1531f; --accent-soft: #f0dccb; --card: #ffffff; --border: #e6e0d4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16.5px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    background: linear-gradient(180deg, var(--bg-alt), var(--bg));
+    padding: 44px 0 34px; border-bottom: 1px solid var(--border);
+  }
+  .back-link { display: inline-block; margin-bottom: 16px; font-size: 14px; color: var(--ink-soft); text-decoration: none; }
+  .back-link:hover { color: var(--accent); }
+  h1 { font-size: 33px; margin: 0 0 12px; letter-spacing: -0.015em; line-height: 1.2; }
+  header p { color: var(--ink-soft); font-size: 16px; margin: 0 0 10px; }
+
+  .prereq {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 20px; margin: 26px 0; font-size: 14.5px;
+  }
+  .prereq strong { display: block; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+
+  nav.toc {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 22px; margin: 26px 0 10px;
+  }
+  nav.toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 0 0 10px; }
+  /* The part headers sit inside the <ol> (only <li> is valid there), but
+     they are labels, not numbered entries. Native <ol> numbering would
+     count them, drifting the TOC out of step with the body's own section
+     numbers — and `counter-increment: none` does NOT suppress the built-in
+     list-item counter (confirmed live: the first entry still rendered as
+     "2."). So numbering is done with an explicit CSS counter instead,
+     incremented only on real entries. */
+  nav.toc ol { margin: 0; padding-inline-start: 26px; font-size: 15px; list-style: none; counter-reset: toc; }
+  nav.toc li { margin: 5px 0; }
+  nav.toc li:not(.part) { counter-increment: toc; }
+  nav.toc li:not(.part)::before {
+    content: counter(toc) "."; color: var(--ink-soft);
+    display: inline-block; width: 24px; margin-inline-start: -26px; font-variant-numeric: tabular-nums;
+  }
+  nav.toc .part { font-weight: 700; font-size: 12.5px;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-top: 14px; }
+  nav.toc .part:first-child { margin-top: 0; }
+
+  main { padding-bottom: 40px; }
+  .part-head {
+    margin: 54px 0 0; padding-top: 26px; border-top: 2px solid var(--accent-soft);
+    font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); font-weight: 700;
+  }
+  section.topic { padding: 22px 0 30px; }
+  h2.topic-title { font-size: 22px; margin: 8px 0 4px; letter-spacing: -0.01em; }
+  h3 { font-size: 17px; margin: 26px 0 8px; }
+  .source-ref {
+    font-size: 12.5px; color: var(--ink-soft); margin: 0 0 18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .source-ref a { color: var(--ink-soft); }
+  p { margin: 0 0 14px; }
+  ul, ol.steps { margin: 0 0 14px; padding-inline-start: 24px; }
+  li { margin: 6px 0; }
+
+  .eq-block {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 6px 20px; margin: 18px 0; overflow-x: auto;
+  }
+  .note, .check {
+    border-radius: 10px; padding: 14px 18px; font-size: 14.5px; margin: 18px 0;
+  }
+  .note { background: var(--accent-soft); color: #6b3417; }
+  .check { background: #e8f0e6; color: #2c5b2f; }
+  .note p:last-child, .check p:last-child { margin-bottom: 0; }
+  .note strong, .check strong { display: block; margin-bottom: 4px; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--accent-soft); color: #7a3110; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; }
+  .check code, .note code { background: rgba(255,255,255,0.6); }
+
+  /* Defence in depth for INLINE math: unlike display equations (which live
+     in .eq-block and scroll), a long inline $...$ has no wrap opportunity —
+     MathJax renders it as one unbreakable box that pushes the whole page
+     wider, producing horizontal scroll on the <body> itself. Caught live at
+     a 475px viewport by exactly one over-long expression. Long inline math
+     is better rewritten as a display equation (and that one was), but this
+     keeps a future one from silently breaking the page layout. */
+  mjx-container:not([display="true"]) { max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }
+
+  footer { padding: 30px 0 56px; color: var(--ink-soft); font-size: 14px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="back-link" href="index.html">← Back to overview</a>
+    <h1>The math behind Scout, from the ground up</h1>
+    <p>
+      Every equation here is derived rather than asserted, and every one of
+      them is actually implemented in the codebase and covered by tests.
+      Each section names the source file it comes from, so you can read the
+      derivation and the code side by side.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="prereq">
+    <strong>What you need to know already</strong>
+    First-year linear algebra (matrices, matrix multiplication, linear maps,
+    determinants, orthogonality) and calculus (derivatives, partial
+    derivatives). That's it. Everything else — Bayesian updates, camera
+    models, projective geometry, isosurfaces — is built up here from
+    scratch, because most of it isn't covered in a first-year course.
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li class="part">Part I — Where things are</li>
+      <li><a href="#conventions">Conventions: frames, units, angles</a></li>
+      <li><a href="#rotation">Rotations in the plane, derived</a></li>
+      <li><a href="#poses">Rigid transforms: composing and inverting</a></li>
+      <li><a href="#homogeneous">Why this is really matrix multiplication</a></li>
+      <li><a href="#chain">Chaining frames: the localization equation</a></li>
+      <li class="part">Part II — What the robot believes</li>
+      <li><a href="#bayes">Probability, Bayes, and the occupancy problem</a></li>
+      <li><a href="#logodds">From Bayes to log-odds</a></li>
+      <li><a href="#sensormodel">The sensor model and the cone</a></li>
+      <li><a href="#frontier">Frontier exploration as a graph problem</a></li>
+      <li class="part">Part III — Seeing</li>
+      <li><a href="#raysegment">Ray/segment intersection</a></li>
+      <li><a href="#raybox">Ray/box intersection (the slab method)</a></li>
+      <li><a href="#pinhole">The pinhole camera model</a></li>
+      <li><a href="#backproject">Backprojection: pixels to 3D points</a></li>
+      <li><a href="#rot3d">Rotating the camera into the world</a></li>
+      <li><a href="#pnp">Recovering pose from a marker (Rodrigues &amp; PnP)</a></li>
+      <li class="part">Part IV — Building a surface</li>
+      <li><a href="#isosurface">Scalar fields and isosurfaces</a></li>
+      <li><a href="#marching">Marching cubes</a></li>
+      <li><a href="#poisson">Poisson surface reconstruction</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================== PART I ============================== -->
+  <div class="part-head">Part I — Where things are</div>
+
+  <section class="topic" id="conventions">
+    <h2 class="topic-title">1. Conventions: frames, units, angles</h2>
+    <p class="source-ref">pi/scout/pose2d.py, pi/scout/protocol.py</p>
+    <p>
+      Before any equation means anything, we have to fix the conventions.
+      Almost every bug in robotics geometry is a convention mismatch, not an
+      algebra mistake, so these are worth stating precisely.
+    </p>
+    <ul>
+      <li><strong>Units:</strong> millimetres for length, degrees for angles in stored data (converted to radians only inside trig calls).</li>
+      <li><strong>The world frame:</strong> $x$ forward, $y$ to the <em>left</em>, $z$ up. The robot starts at the origin.</li>
+      <li><strong>Heading:</strong> $\theta = 0$ means facing $+x$; $\theta$ increases <em>counter-clockwise</em> when viewed from above. So $\theta = 90°$ faces $+y$.</li>
+      <li><strong>Angle wrapping:</strong> all headings are normalized into $[-180°, 180°)$.</li>
+    </ul>
+    <p>
+      This is a <em>right-handed</em> coordinate system: if you point your
+      right hand's thumb along $+z$ (up), your fingers curl from $+x$ toward
+      $+y$ — the direction of positive rotation. The camera, as we'll see in
+      Part III, uses a <em>different</em> convention (OpenCV's), and
+      converting between them is where the sign errors live.
+    </p>
+  </section>
+
+  <section class="topic" id="rotation">
+    <h2 class="topic-title">2. Rotations in the plane, derived</h2>
+    <p class="source-ref">pi/scout/pose2d.py</p>
+    <p>
+      A rotation about the origin is a linear map. From linear algebra, a
+      linear map is completely determined by what it does to the basis
+      vectors — and its matrix has those images as its <em>columns</em>. So
+      to build the rotation matrix, we only need to ask where $e_1$ and
+      $e_2$ go.
+    </p>
+    <p>
+      Rotating $e_1 = (1, 0)$ counter-clockwise by $\theta$ traces a unit
+      circle, landing at $(\cos\theta, \sin\theta)$ — that's the definition
+      of cosine and sine. Rotating $e_2 = (0,1)$, which is already $90°$
+      ahead, lands it at angle $\theta + 90°$, and using
+      $\cos(\theta + 90°) = -\sin\theta$, $\sin(\theta+90°) = \cos\theta$,
+      that's $(-\sin\theta, \cos\theta)$. Stacking those as columns:
+    </p>
+    <div class="eq-block">
+      $$
+      R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\[2pt] \sin\theta & \cos\theta \end{pmatrix}
+      $$
+    </div>
+    <p>Three properties we will lean on constantly, all provable in a line or two:</p>
+    <ol class="steps">
+      <li>
+        <strong>Rotations compose by adding angles:</strong>
+        $R(\alpha)R(\beta) = R(\alpha + \beta)$. Multiply the matrices out and
+        the entries are exactly the angle-addition formulas for sine and
+        cosine. This is <em>why</em> the heading field in a pose can just be
+        added rather than needing matrix bookkeeping.
+      </li>
+      <li>
+        <strong>Rotations are orthogonal:</strong> the columns are unit
+        length and perpendicular, so $R^\top R = I$, which means
+        $R^{-1} = R^\top$. Inverting a rotation costs nothing — you transpose it.
+      </li>
+      <li>
+        <strong>Inverting means negating the angle:</strong>
+        $R(\theta)^{-1} = R(-\theta)$, which follows from property 1 with
+        $\beta = -\alpha$. And since $\cos$ is even and $\sin$ is odd,
+        $R(-\theta) = R(\theta)^\top$ — consistent with property 2.
+      </li>
+    </ol>
+    <p>
+      Also worth noting: $\det R(\theta) = \cos^2\theta + \sin^2\theta = 1$.
+      An orthogonal matrix with determinant $+1$ is a <em>proper</em>
+      rotation — it preserves lengths, angles, and handedness. Determinant
+      $-1$ would mean a reflection is hiding in there. We'll use this as a
+      correctness check on a 3D matrix later.
+    </p>
+  </section>
+
+  <section class="topic" id="poses">
+    <h2 class="topic-title">3. Rigid transforms: composing and inverting</h2>
+    <p class="source-ref">pi/scout/pose2d.py</p>
+    <p>
+      A <strong>pose</strong> is a rotation plus a translation: it describes
+      where a whole coordinate frame sits inside another one. We write a pose
+      as $A = (\mathbf{t}_A, \theta_A)$ where $\mathbf{t}_A \in \mathbb{R}^2$
+      is the origin offset and $\theta_A$ the heading.
+    </p>
+    <p>
+      The meaning of a pose is the map it defines. If a point has coordinates
+      $\mathbf{p}$ in $A$'s local frame, its coordinates in $A$'s parent
+      frame are:
+    </p>
+    <div class="eq-block">
+      $$ T_A(\mathbf{p}) = \mathbf{t}_A + R(\theta_A)\,\mathbf{p} $$
+    </div>
+    <p>
+      Rotate first, then translate. Note this map is <em>affine</em>, not
+      linear — $T_A(\mathbf{0}) = \mathbf{t}_A \ne \mathbf{0}$ in general,
+      so it fails the definition of a linear map. Section 4 shows the standard
+      trick for making it linear again.
+    </p>
+
+    <h3>Deriving <code>compose</code></h3>
+    <p>
+      Suppose $B$ is a pose expressed <em>inside</em> $A$'s frame (say, the
+      turret's position on the chassis), and we want the single pose
+      describing $B$ directly in $A$'s parent frame (the turret in the
+      world). Apply the maps in order — a point in $B$'s frame goes to $A$'s
+      frame, then to the parent — and simplify:
+    </p>
+    <div class="eq-block">
+      $$
+      \begin{aligned}
+      T_A\big(T_B(\mathbf{p})\big)
+        &= \mathbf{t}_A + R(\theta_A)\big[\mathbf{t}_B + R(\theta_B)\mathbf{p}\big] \\
+        &= \underbrace{\big[\mathbf{t}_A + R(\theta_A)\mathbf{t}_B\big]}_{\text{new translation}}
+           \;+\; \underbrace{R(\theta_A)R(\theta_B)}_{=\,R(\theta_A + \theta_B)}\mathbf{p}
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      The result has exactly the shape of a pose, so we can read off its two
+      components directly:
+    </p>
+    <div class="eq-block">
+      $$
+      \operatorname{compose}(A, B) = \Big(\; \mathbf{t}_A + R(\theta_A)\,\mathbf{t}_B,\;\; \theta_A + \theta_B \;\Big)
+      $$
+    </div>
+    <p>
+      Writing the rotation out componentwise gives precisely the code in
+      <code>pose2d.compose</code>:
+      $x = x_A + x_B\cos\theta_A - y_B\sin\theta_A$ and
+      $y = y_A + x_B\sin\theta_A + y_B\cos\theta_A$.
+    </p>
+    <p>
+      Composition is <strong>associative</strong> (it's function composition)
+      but <strong>not commutative</strong> — $R(\theta_A)\mathbf{t}_B \neq
+      R(\theta_B)\mathbf{t}_A$ in general. Concretely: walking forward one
+      metre and then turning left does not put you where turning left and
+      then walking forward does. Order matters, and every chain in Section 5
+      depends on getting it right.
+    </p>
+
+    <h3>Deriving <code>inverse</code></h3>
+    <p>
+      The inverse pose answers the reverse question: given a point's
+      coordinates in the parent frame, what are they in the local frame? Just
+      solve $\mathbf{q} = \mathbf{t} + R(\theta)\mathbf{p}$ for $\mathbf{p}$:
+    </p>
+    <div class="eq-block">
+      $$
+      \mathbf{p} = R(\theta)^{-1}(\mathbf{q} - \mathbf{t})
+                 = R(-\theta)\,\mathbf{q} \;+\; \big[-R(-\theta)\,\mathbf{t}\big]
+      $$
+    </div>
+    <p>
+      That is again pose-shaped — a rotation by $-\theta$ plus a translation
+      of $-R(-\theta)\mathbf{t}$. So:
+    </p>
+    <div class="eq-block">
+      $$ \operatorname{inverse}(A) = \Big(-R(-\theta_A)\,\mathbf{t}_A,\;\; -\theta_A\Big) $$
+    </div>
+    <p>
+      Expanding with $R(-\theta) = \begin{pmatrix}\cos\theta & \sin\theta\\ -\sin\theta & \cos\theta\end{pmatrix}$
+      gives $x = -x_A\cos\theta_A - y_A\sin\theta_A$ and
+      $y = x_A\sin\theta_A - y_A\cos\theta_A$ — exactly
+      <code>pose2d.inverse</code>.
+    </p>
+    <div class="check">
+      <strong>Verified</strong>
+      <p>The tests assert, for many random poses,</p>
+      <div class="eq-block">
+        $$ \operatorname{compose}\big(A, \operatorname{inverse}(A)\big) = \operatorname{compose}\big(\operatorname{inverse}(A), A\big) = \text{identity} $$
+      </div>
+      <p>
+        which is the practical statement that these two derivations agree
+        with each other and with the code.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="homogeneous">
+    <h2 class="topic-title">4. Why this is really matrix multiplication</h2>
+    <p>
+      Section 3 noted that a pose is affine, not linear. There's a standard
+      fix that makes everything above collapse into ordinary linear algebra,
+      and it's worth seeing because it explains <em>why</em> composition
+      behaves so much like matrix multiplication: because it is.
+    </p>
+    <p>
+      Embed the plane into $\mathbb{R}^3$ by appending a $1$ to every point:
+      $(x, y) \mapsto (x, y, 1)$. Then define the $3\times3$ matrix
+    </p>
+    <div class="eq-block">
+      $$
+      M_A = \begin{pmatrix} R(\theta_A) & \mathbf{t}_A \\[2pt] \mathbf{0}^\top & 1 \end{pmatrix}
+          = \begin{pmatrix} \cos\theta_A & -\sin\theta_A & x_A \\ \sin\theta_A & \cos\theta_A & y_A \\ 0 & 0 & 1\end{pmatrix}
+      $$
+    </div>
+    <p>Multiplying a lifted point by $M_A$ rotates and translates it in one step:</p>
+    <div class="eq-block">
+      $$
+      M_A \begin{pmatrix} \mathbf{p} \\ 1 \end{pmatrix}
+      = \begin{pmatrix} R(\theta_A)\mathbf{p} + \mathbf{t}_A \\ 1 \end{pmatrix}
+      $$
+    </div>
+    <p>
+      Now check what matrix multiplication does to two of these — using block
+      multiplication:
+    </p>
+    <div class="eq-block">
+      $$
+      M_A M_B = \begin{pmatrix} R_A R_B & R_A \mathbf{t}_B + \mathbf{t}_A \\ \mathbf{0}^\top & 1\end{pmatrix}
+      $$
+    </div>
+    <p>
+      The top-left block is the composed rotation and the top-right is
+      exactly the composed translation we derived in Section 3. So
+      <strong>$\operatorname{compose}(A,B)$ <em>is</em> $M_A M_B$</strong>,
+      and $\operatorname{inverse}(A)$ is $M_A^{-1}$. Associativity and
+      non-commutativity are then inherited for free from matrix
+      multiplication — no separate proof needed.
+    </p>
+    <p>
+      These matrices form a group (closed under multiplication and inverses,
+      with the identity matrix as the identity element) called $SE(2)$, the
+      <em>special Euclidean group</em> in 2D. The code stores just
+      $(x, y, \theta)$ instead of a full $3\times3$ matrix because three
+      numbers is cheaper than nine and the composition formula is short
+      enough to write directly — but the structure underneath is this group.
+    </p>
+    <div class="note">
+      <strong>Why bother</strong>
+      <p>
+        This is the same trick that makes the camera projection in Section 13
+        expressible as a matrix. Appending a coordinate to make affine maps
+        linear is called using <em>homogeneous coordinates</em>, and it is
+        the single most reused idea in all of geometric computer vision.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="chain">
+    <h2 class="topic-title">5. Chaining frames: the localization equation</h2>
+    <p class="source-ref">pi/scout/localize.py</p>
+    <p>
+      Wheel odometry drifts. Every wheel slip, every millimetre of error in
+      the measured wheel diameter, accumulates without bound — after a few
+      minutes the robot's belief about where it is has quietly diverged from
+      the truth. The fix is a <strong>landmark</strong>: something at a
+      known, surveyed position that the robot can recognize and measure
+      against. Here that's a printed ArUco marker.
+    </p>
+    <p>There are four frames in play, nested inside one another:</p>
+    <div class="eq-block">
+      $$ \text{world} \;\supset\; \text{chassis} \;\supset\; \text{turret} \;\supset\; \text{camera} $$
+    </div>
+    <p>
+      Three of the relationships are fixed and measured once at build time:
+      $\text{camera}_{\text{mount}}$ (camera on the turret) and
+      $\text{turret}_{\text{mount}}$ (turret axis on the chassis). One
+      changes every sweep: the turret's commanded angle. And one is measured
+      live by the camera: $\text{marker}_{\text{camera}}$, the marker's pose
+      as seen from the camera.
+    </p>
+    <p>
+      Going <em>forward</em> — from a known chassis pose to what the camera
+      should see — is a straight chain of compositions:
+    </p>
+    <div class="eq-block">
+      $$
+      \begin{aligned}
+      \text{world}_{\text{turret}} &= \operatorname{compose}(\text{chassis}_{\text{world}},\; \text{turret}_{\text{pose}}) \\
+      \text{world}_{\text{camera}} &= \operatorname{compose}(\text{world}_{\text{turret}},\; \text{camera}_{\text{mount}}) \\
+      \text{marker}_{\text{camera}} &= \operatorname{compose}\big(\operatorname{inverse}(\text{world}_{\text{camera}}),\; \text{marker}_{\text{world}}\big)
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      But we want the <em>opposite</em>: we know what the camera saw and want
+      the chassis pose. Solve the chain backwards, peeling off one known
+      transform at a time. Each step uses the identity
+      $\operatorname{compose}(X, \operatorname{inverse}(X)) = I$ to cancel a
+      transform we know:
+    </p>
+    <div class="eq-block">
+      $$
+      \begin{aligned}
+      \text{world}_{\text{camera}}\; &=\; \operatorname{compose}\big(\text{marker}_{\text{world}},\; \operatorname{inverse}(\text{marker}_{\text{camera}})\big) \\
+      \text{world}_{\text{turret}}\; &=\; \operatorname{compose}\big(\text{world}_{\text{camera}},\; \operatorname{inverse}(\text{camera}_{\text{mount}})\big) \\
+      \text{world}_{\text{chassis}} &=\; \operatorname{compose}\big(\text{world}_{\text{turret}},\; \operatorname{inverse}(\text{turret}_{\text{pose}})\big)
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      Read the first line in words: "the marker is <em>here</em> in the
+      world, and the camera sees it <em>there</em> relative to itself,
+      therefore the camera must be <em>here</em>." The next two lines walk
+      back down the mounting chain to the chassis, whose corrected pose then
+      overwrites the drifted odometry.
+    </p>
+    <p>
+      One subtlety in $\text{turret}_{\text{pose}}$: it uses the turret
+      mount's <em>position</em> but replaces its heading with the turret's
+      current commanded angle — because the turret rotates about a fixed
+      point on the chassis. The position is structural; the angle is live.
+    </p>
+    <div class="check">
+      <strong>How this is tested without hardware</strong>
+      <p>
+        Pick an arbitrary true chassis pose, run the forward chain to compute
+        what the camera <em>would</em> see, feed that through the backward
+        chain, and assert you recover the original pose. If either direction
+        had a sign or ordering error the round trip would not close. This
+        catches convention bugs with no camera in the room.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== PART II ============================== -->
+  <div class="part-head">Part II — What the robot believes</div>
+
+  <section class="topic" id="bayes">
+    <h2 class="topic-title">6. Probability, Bayes, and the occupancy problem</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      The map divides the floor into a grid of square cells. Each cell is
+      either occupied or free — but the robot never observes that directly.
+      It observes noisy sonar pings and must maintain a <em>belief</em>.
+      That belief is a probability, and updating it correctly requires Bayes'
+      rule, so let's build that up.
+    </p>
+    <p>
+      Write $m$ for the event "this cell is occupied" and $\lnot m$ for "it
+      is free". The <strong>conditional probability</strong> $P(A \mid B)$ is
+      the probability of $A$ given that $B$ is known to have happened, and it
+      is defined as $P(A \cap B) / P(B)$. Since $P(A \cap B)$ is symmetric in
+      $A$ and $B$, we can write it two ways:
+    </p>
+    <div class="eq-block">
+      $$ P(A\mid B)\,P(B) \;=\; P(A \cap B) \;=\; P(B \mid A)\,P(A) $$
+    </div>
+    <p>Dividing by $P(B)$ gives <strong>Bayes' rule</strong>:</p>
+    <div class="eq-block">
+      $$ P(A \mid B) = \frac{P(B\mid A)\,P(A)}{P(B)} $$
+    </div>
+    <p>
+      In our setting, with $z$ a sensor measurement: $P(m)$ is the
+      <em>prior</em> (what we believed before), $P(z \mid m)$ is the
+      <em>sensor model</em> (how likely this reading is if the cell really is
+      occupied), and $P(m \mid z)$ is the <em>posterior</em> — the updated
+      belief we want.
+    </p>
+    <p>
+      The awkward part is $P(z)$, the denominator. It is the probability of
+      seeing that reading averaged over all possible worlds, which is
+      genuinely hard to compute. The next section's main trick is making it
+      cancel out entirely.
+    </p>
+  </section>
+
+  <section class="topic" id="logodds">
+    <h2 class="topic-title">7. From Bayes to log-odds</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      We need to fold in many readings over time. Write $z_{1:t}$ for all
+      measurements up to time $t$. Applying Bayes' rule to the newest one:
+    </p>
+    <div class="eq-block">
+      $$ P(m \mid z_{1:t}) = \frac{P(z_t \mid m,\, z_{1:t-1})\; P(m \mid z_{1:t-1})}{P(z_t \mid z_{1:t-1})} $$
+    </div>
+    <p>
+      Now we make the <strong>Markov assumption</strong>: given the true
+      state of the cell, a new reading doesn't depend on past readings, so
+      $P(z_t \mid m, z_{1:t-1}) = P(z_t \mid m)$. This is an approximation —
+      real sonar errors are correlated — but it's the assumption that makes
+      the whole thing tractable, and it works well in practice.
+    </p>
+    <p>
+      Next, a change of variables. Rather than track $P(m \mid z_{1:t})$
+      directly, track the <strong>odds</strong>: the ratio of the two
+      hypotheses. The point is that when we write the same equation for
+      $\lnot m$ and divide, every term that doesn't mention $m$ — including
+      the intractable $P(z_t \mid z_{1:t-1})$ — appears in both numerator and
+      denominator and cancels:
+    </p>
+    <div class="eq-block">
+      $$
+      \frac{P(m \mid z_{1:t})}{P(\lnot m \mid z_{1:t})}
+      = \frac{P(z_t \mid m)}{P(z_t \mid \lnot m)} \cdot \frac{P(m \mid z_{1:t-1})}{P(\lnot m \mid z_{1:t-1})}
+      $$
+    </div>
+    <p>
+      The new belief is the old belief multiplied by a factor contributed by
+      the new measurement. That's already a big win. The second win is to
+      take logarithms, which turns that product into a sum. Define the
+      <strong>log-odds</strong>:
+    </p>
+    <div class="eq-block">
+      $$ \ell \;=\; \log\frac{p}{1-p} \qquad\Longleftrightarrow\qquad p \;=\; \frac{1}{1+e^{-\ell}} = \sigma(\ell) $$
+    </div>
+    <p>
+      (The inverse is the logistic function — solve $\ell = \log\frac{p}{1-p}$
+      for $p$ by exponentiating and rearranging.) Taking $\log$ of the odds
+      update turns it into pure addition:
+    </p>
+    <div class="eq-block">
+      $$ \ell_t \;=\; \ell_{t-1} \;+\; \underbrace{\log\frac{P(z_t\mid m)}{P(z_t \mid \lnot m)}}_{\text{constant per reading type}} $$
+    </div>
+    <p>
+      This is the entire update rule, and it is why the code's inner loop is
+      a single <code>+=</code>. Three properties fall out of the change of
+      variables, all of them useful:
+    </p>
+    <ul>
+      <li>
+        <strong>$\ell = 0$ means total ignorance.</strong> $p = 0.5$ gives
+        odds $1$ and $\log 1 = 0$ — so a freshly allocated grid of zeros is
+        exactly the correct "I know nothing" prior. No initialization code needed.
+      </li>
+      <li>
+        <strong>The sign is the answer.</strong> $\ell > 0$ means occupied is
+        more likely, $\ell < 0$ means free is more likely. Symmetric and easy
+        to threshold.
+      </li>
+      <li>
+        <strong>It's numerically stable.</strong> Probabilities near $0$ or
+        $1$ multiply toward underflow; log-odds just grow linearly and stay
+        in a comfortable floating-point range.
+      </li>
+    </ul>
+    <p>The constants the code actually uses, and what they mean as probabilities:</p>
+    <div class="eq-block">
+      $$
+      \ell_{\text{free}} = -0.85,\qquad \ell_{\text{occ}} = +0.85,
+      \qquad \sigma(0.85) \approx 0.70
+      $$
+      $$
+      \text{classify occupied if } \ell \ge 0.5\;(p \approx 0.62),
+      \qquad \text{free if } \ell \le -0.5
+      $$
+      $$
+      \text{clamp } \ell \in [-4,\, 4], \qquad \sigma(4) \approx 0.98
+      $$
+    </div>
+    <p>
+      So one clean reading moves a cell to about $70\%$ confidence, which
+      already crosses the $62\%$ classification threshold — deliberate, since
+      the simulated sonar has no injected noise, so there's nothing to gain
+      from demanding corroboration.
+    </p>
+    <div class="note">
+      <strong>Why clamp at ±4</strong>
+      <p>
+        Without a bound, a cell observed a hundred times reaches
+        $\ell = 85$, and $170$ contradicting observations would be needed to
+        talk it back down. The world changes — a chair moves — so belief must
+        stay revisable. Clamping caps how much evidence any cell can bank,
+        which bounds how long it takes to change its mind. This is a
+        deliberate departure from the pure Bayesian update, trading strict
+        correctness for adaptability.
+      </p>
+    </div>
+    <p>
+      Finally, <strong>coverage</strong>, the number shown in the dashboard,
+      is simply the fraction of cells whose $\ell$ has moved far enough from
+      zero to be classified either way:
+    </p>
+    <div class="eq-block">
+      $$ \text{coverage} = \frac{\big|\{\,c \;:\; |\ell_c| > 0.5\,\}\big|}{\text{total cells}} $$
+    </div>
+  </section>
+
+  <section class="topic" id="sensormodel">
+    <h2 class="topic-title">8. The sensor model and the cone</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      Section 7 gives the update rule but not <em>which</em> cells to apply
+      it to. That's the sensor model. An ultrasonic ping returning distance
+      $r$ tells us two different things:
+    </p>
+    <ul>
+      <li>Everything along the beam <em>closer</em> than $r$ must be empty, or the pulse would have bounced sooner. Those cells get $\ell_{\text{free}}$.</li>
+      <li>Something is <em>at</em> roughly distance $r$. That cell gets $\ell_{\text{occ}}$.</li>
+    </ul>
+    <p>
+      The code walks the beam in steps of half a cell width — small enough
+      that no cell along the path is skipped, since a step larger than the
+      cell size could jump clean over one:
+    </p>
+    <div class="eq-block">
+      $$ \mathbf{q}_i = \mathbf{p} + i\,\Delta\,(\cos\phi,\, \sin\phi), \qquad \Delta = \tfrac{1}{2}\,\text{cell size},\qquad i = 0 \ldots \lfloor r/\Delta \rfloor $$
+    </div>
+
+    <h3>Why "no echo" is not "clear"</h3>
+    <p>
+      If the pulse never comes back, the tempting reading is "nothing out
+      there for the full sensor range." That is wrong, and dangerously so: an
+      ultrasonic pulse hitting a wall at a shallow angle reflects <em>away</em>
+      rather than back, exactly like light off a mirror. Silence usually means
+      an angled surface, not empty space. The code therefore carves free space
+      out to max range but marks <em>nothing</em> occupied at the far end —
+      absence of evidence recorded as absence of evidence.
+    </p>
+
+    <h3>Why a cone rather than a ray</h3>
+    <p>
+      A real ultrasonic transducer emits a beam roughly $30°$ wide, not a
+      mathematical line. Modelling it as a single ray caused a genuine bug,
+      caught in simulation: consecutive sweep angles are $30°$ apart, so a
+      one-ray model leaves thin unobserved wedges between readings. Near the
+      robot those wedges are only centimetres wide, and a cell stuck in one
+      stays $\ell = 0$ forever. Since exploration always drives at the
+      <em>nearest</em> unknown region, the robot would target a wedge right
+      beside itself, arrive, fail to clear it, and repeat — a livelock.
+    </p>
+    <p>
+      The fix models the actual beam width. Free space is carved along $n = 5$
+      sub-rays spanning the cone:
+    </p>
+    <div class="eq-block">
+      $$ \phi_k = \phi_0 + \left(\frac{2k}{n-1} - 1\right)\alpha, \qquad k = 0,\ldots,n-1, \qquad \alpha = 15° $$
+    </div>
+    <p>
+      (Check the endpoints: $k=0$ gives $\phi_0 - \alpha$ and $k = n-1$ gives
+      $\phi_0 + \alpha$, so the sub-rays span the full $\pm 15°$ evenly.)
+      Only the <em>centre</em> ray's endpoint is marked occupied, though —
+      the ping proves something is out there at that range, but not which
+      angle within the cone, so claiming the whole arc is solid would
+      manufacture obstacles that aren't there. Free space across the cone is
+      the safe claim; occupancy across the cone is not.
+    </p>
+  </section>
+
+  <section class="topic" id="frontier">
+    <h2 class="topic-title">9. Frontier exploration as a graph problem</h2>
+    <p class="source-ref">pi/scout/explore.py</p>
+    <p>
+      Given a partial map, where should the robot go? The classic answer is
+      <strong>frontier-based exploration</strong>. Define a frontier cell as
+      one that is known-free and adjacent to at least one unknown cell:
+    </p>
+    <div class="eq-block">
+      $$ F = \big\{\, c \;:\; \text{state}(c) = \text{FREE} \;\wedge\; \exists\, n \in N_4(c)\ \text{state}(n) = \text{UNKNOWN} \,\big\} $$
+    </div>
+    <p>
+      where $N_4$ is the four-neighbourhood (up, down, left, right). This set
+      is exactly the boundary between the known and unknown regions —
+      standing on a frontier cell and looking outward is guaranteed to reveal
+      something new. That's what makes it the right target: it's the set of
+      places where information gain is certain rather than hoped for.
+    </p>
+    <p>
+      Four-connectivity rather than eight is deliberate. Diagonal adjacency
+      would let two cells on opposite sides of a one-cell-thick wall count as
+      neighbours, merging frontiers that are physically unreachable from one
+      another.
+    </p>
+
+    <h3>Clustering</h3>
+    <p>
+      A long wall bordering unexplored space yields dozens of individual
+      frontier cells. Treating each as a separate goal makes the robot
+      dither between adjacent cells. So group them into
+      <strong>connected components</strong>: build a graph whose vertices are
+      frontier cells with edges between 4-neighbours, then find its connected
+      components by breadth-first search. Each cell is enqueued and dequeued
+      at most once, giving $O(|F|)$ time.
+    </p>
+    <p>Each cluster collapses to its centroid — the arithmetic mean of its cells' world positions:</p>
+    <div class="eq-block">
+      $$ \bar{\mathbf{x}} = \frac{1}{|C|}\sum_{c\, \in\, C} \mathbf{x}_c $$
+    </div>
+    <p>
+      Clusters smaller than a threshold (2 cells) are discarded as sensor
+      noise rather than real openings.
+    </p>
+
+    <h3>Choosing a target</h3>
+    <p>The robot drives to the nearest remaining centroid by straight-line distance:</p>
+    <div class="eq-block">
+      $$ C^\star = \arg\min_{C} \;\big\lVert \bar{\mathbf{x}}_C - \mathbf{x}_{\text{robot}} \big\rVert_2 $$
+    </div>
+    <div class="note">
+      <strong>A deliberate simplification</strong>
+      <p>
+        Straight-line distance ignores walls, so the nearest centroid might
+        be behind one. There is no path planner here — instead the robot
+        drives a short step, re-scans, and re-plans. A wrong choice
+        self-corrects within a couple of seconds. This trades optimality for
+        a great deal of avoided complexity, and for a room-sized space it is
+        the right trade.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== PART III ============================== -->
+  <div class="part-head">Part III — Seeing</div>
+
+  <section class="topic" id="raysegment">
+    <h2 class="topic-title">10. Ray/segment intersection</h2>
+    <p class="source-ref">pi/tools/sim_world.py</p>
+    <p>
+      The simulator needs to answer: starting at $\mathbf{p}$ and travelling
+      in unit direction $\mathbf{d}$, where do I first hit the wall segment
+      from $\mathbf{a}$ to $\mathbf{b}$? Parametrize both objects:
+    </p>
+    <div class="eq-block">
+      $$ \text{ray: } \mathbf{p} + t\,\mathbf{d},\; t \ge 0 \qquad\qquad \text{segment: } \mathbf{a} + u\,\mathbf{s},\; 0 \le u \le 1,\; \mathbf{s} = \mathbf{b}-\mathbf{a} $$
+    </div>
+    <p>Setting them equal gives two scalar equations in two unknowns — a linear system:</p>
+    <div class="eq-block">
+      $$
+      t\,\mathbf{d} - u\,\mathbf{s} = \mathbf{w}, \qquad \mathbf{w} = \mathbf{a} - \mathbf{p}
+      \qquad\Longleftrightarrow\qquad
+      \begin{pmatrix} d_x & -s_x \\ d_y & -s_y \end{pmatrix}
+      \begin{pmatrix} t \\ u \end{pmatrix} = \begin{pmatrix} w_x \\ w_y \end{pmatrix}
+      $$
+    </div>
+    <p>
+      It's convenient to introduce the <strong>2D cross product</strong>, a
+      scalar: $\mathbf{u} \times \mathbf{v} = u_x v_y - u_y v_x$. It is the
+      determinant $\det[\mathbf{u}\;\mathbf{v}]$, equal to the signed area of
+      the parallelogram they span, and it vanishes exactly when the two
+      vectors are parallel. Applying Cramer's rule and simplifying:
+    </p>
+    <div class="eq-block">
+      $$
+      t = \frac{\mathbf{w} \times \mathbf{s}}{\mathbf{d} \times \mathbf{s}},
+      \qquad\qquad
+      u = \frac{\mathbf{w} \times \mathbf{d}}{\mathbf{d} \times \mathbf{s}}
+      $$
+    </div>
+    <p>A hit is reported only if both parameter constraints hold:</p>
+    <ul>
+      <li>$t \ge 0$ — the wall is ahead of the ray, not behind it. Dropping this makes the sensor see through the back of its own head.</li>
+      <li>$0 \le u \le 1$ — the crossing lies on the actual segment, not on its infinite extension past either endpoint.</li>
+    </ul>
+    <p>
+      The shared denominator $\mathbf{d} \times \mathbf{s}$ is zero exactly
+      when ray and wall are parallel; the code tests $|\mathbf{d} \times
+      \mathbf{s}| < 10^{-9}$ and reports no hit, which is both the
+      geometrically right answer and the guard against dividing by zero.
+    </p>
+    <div class="check">
+      <strong>Why $t$ is directly a distance</strong>
+      <p>
+        Because $\mathbf{d}$ is a unit vector, the point at parameter $t$ is
+        exactly $t$ millimetres from the origin along the ray — so $t$ needs
+        no conversion. Verified numerically over thousands of random
+        ray/segment pairs: the recovered $t$ matches
+        $\lVert \text{hit} - \mathbf{p}\rVert$ to $10^{-13}$.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="raybox">
+    <h2 class="topic-title">11. Ray/box intersection (the slab method)</h2>
+    <p class="source-ref">pi/tools/sim_world.py</p>
+    <p>
+      Furniture is modelled as axis-aligned boxes. An axis-aligned box is an
+      intersection of three <strong>slabs</strong> — the region between two
+      parallel planes, one pair per axis:
+    </p>
+    <div class="eq-block">
+      $$ \text{box} = \{\mathbf{x} : x \in [x_0,x_1]\} \cap \{\mathbf{x} : y \in [y_0,y_1]\} \cap \{\mathbf{x} : z \in [z_0,z_1]\} $$
+    </div>
+    <p>
+      The insight: a point on the ray is inside the box exactly when its
+      parameter $t$ lies inside <em>all three</em> per-axis intervals at
+      once. So compute each axis's interval and intersect them. For one axis:
+    </p>
+    <div class="eq-block">
+      $$ t_1 = \frac{lo - p}{d}, \qquad t_2 = \frac{hi - p}{d}, \qquad \text{swap if } t_1 > t_2 $$
+    </div>
+    <p>
+      The swap matters because a negative $d$ flips which plane is entered
+      first. Intersecting intervals means taking the largest lower bound and
+      the smallest upper bound:
+    </p>
+    <div class="eq-block">
+      $$ t_{\min} = \max_{\text{axes}} t_1^{(i)}, \qquad t_{\max} = \min_{\text{axes}} t_2^{(i)} $$
+    </div>
+    <p>Then:</p>
+    <ul>
+      <li>$t_{\min} > t_{\max}$ — the intervals don't overlap, so the ray misses the box entirely.</li>
+      <li>$t_{\max} < 0$ — the box is entirely behind the ray's origin.</li>
+      <li>$t_{\min} < 0 \le t_{\max}$ — the origin is <em>inside</em> the box; the first crossing ahead is the exit point $t_{\max}$.</li>
+      <li>Otherwise the answer is $t_{\min}$, the entry point.</li>
+    </ul>
+    <p>
+      One more edge case: $d = 0$ for some axis means the ray is parallel to
+      that pair of planes, and the division would produce $\pm\infty$. The
+      code checks this explicitly — if the origin's coordinate is outside
+      $[lo, hi]$ the ray can never enter, and otherwise that axis places no
+      constraint at all and is skipped.
+    </p>
+  </section>
+
+  <section class="topic" id="pinhole">
+    <h2 class="topic-title">12. The pinhole camera model</h2>
+    <p class="source-ref">pi/scout/vision.py, pi/scout/depth_estimator.py</p>
+    <p>
+      A camera turns 3D points into 2D pixels. The standard idealization is
+      the <strong>pinhole camera</strong>: all light passes through a single
+      point, and the image forms on a plane at distance $f$ behind it.
+      Working with the equivalent virtual plane in <em>front</em> of the
+      pinhole avoids the image being upside down.
+    </p>
+    <p>
+      Use the camera's own frame, which follows OpenCV's convention and is
+      <em>not</em> the world convention from Section 1: $x_c$ points right,
+      $y_c$ points <em>down</em>, and $z_c$ points forward along the optical
+      axis.
+    </p>
+    <p>
+      Now similar triangles. A point at $(x_c, y_c, z_c)$ and its projection
+      on the image plane at depth $f$ form triangles sharing the apex at the
+      pinhole, so corresponding sides are in proportion:
+    </p>
+    <div class="eq-block">
+      $$ \frac{x_{\text{img}}}{f} = \frac{x_c}{z_c} \qquad\Longrightarrow\qquad x_{\text{img}} = f\,\frac{x_c}{z_c} $$
+    </div>
+    <p>
+      Two adjustments convert this to pixels. First, pixels may not be
+      square, so the horizontal and vertical scales differ: $f_x$ and $f_y$
+      (in pixel units). Second, pixel coordinates are measured from the
+      image's top-left corner, not the optical axis, so we add the
+      <strong>principal point</strong> $(c_x, c_y)$ — where the optical axis
+      actually pierces the sensor, typically near but not exactly at the
+      image centre:
+    </p>
+    <div class="eq-block">
+      $$ u = f_x\,\frac{x_c}{z_c} + c_x, \qquad\qquad v = f_y\,\frac{y_c}{z_c} + c_y $$
+    </div>
+    <p>
+      Using the homogeneous-coordinate idea from Section 4, this becomes a
+      matrix product. The four numbers are collected into the
+      <strong>intrinsic matrix</strong> $K$:
+    </p>
+    <div class="eq-block">
+      $$
+      \begin{pmatrix} u' \\ v' \\ w' \end{pmatrix}
+      = \underbrace{\begin{pmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{pmatrix}}_{K}
+      \begin{pmatrix} x_c \\ y_c \\ z_c \end{pmatrix},
+      \qquad (u, v) = \left(\frac{u'}{w'},\, \frac{v'}{w'}\right)
+      $$
+    </div>
+    <p>
+      The final division by $w' = z_c$ is what makes projection nonlinear —
+      and is precisely why distant things look smaller. These four numbers
+      are recovered by <strong>calibration</strong>: photograph a checkerboard
+      of known geometry from many angles and solve for the $K$ that best
+      explains where its corners landed.
+    </p>
+  </section>
+
+  <section class="topic" id="backproject">
+    <h2 class="topic-title">13. Backprojection: pixels to 3D points</h2>
+    <p class="source-ref">pi/scout/depth_estimator.py</p>
+    <p>
+      Now run the camera backwards. Given a pixel $(u, v)$, which 3D point
+      produced it? Solving the projection equations for $x_c$ and $y_c$:
+    </p>
+    <div class="eq-block">
+      $$ x_c = \frac{u - c_x}{f_x}\,z_c, \qquad\qquad y_c = \frac{v - c_y}{f_y}\,z_c $$
+    </div>
+    <p>
+      Notice $z_c$ never gets determined — it appears as a free parameter.
+      That is not an algebra failure but the geometry telling the truth: a
+      single pixel corresponds to an entire <em>ray</em> of 3D points, all
+      projecting to the same place. A photograph genuinely does not contain
+      the depth information. This is the fundamental problem of monocular
+      vision.
+    </p>
+    <p>
+      The project resolves it with a neural network (MiDaS) that predicts a
+      depth $d$ for every pixel — inferring from learned cues like texture
+      gradients and occlusion, much as a person judges distance in a
+      photograph. Substituting $z_c = d$ fixes the point:
+    </p>
+    <div class="eq-block">
+      $$
+      \mathbf{p}_c = \left( \frac{u - c_x}{f_x}\,d,\;\; \frac{v - c_y}{f_y}\,d,\;\; d \right)
+      $$
+    </div>
+    <div class="note">
+      <strong>An honest caveat about scale</strong>
+      <p>
+        MiDaS predicts <em>relative</em> inverse depth, not metres — it
+        reliably reports that A is nearer than B, but the overall scale is
+        arbitrary and varies per frame. The code maps each frame's predicted
+        range onto an assumed near/far interval, which is self-consistent
+        within one frame but not comparable across frames. Recovering true
+        metric scale needs a second source of information — a known-size
+        landmark, or the ultrasonic reading — and that is not implemented yet.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="rot3d">
+    <h2 class="topic-title">14. Rotating the camera into the world</h2>
+    <p class="source-ref">pi/scout/depth_estimator.py</p>
+    <p>
+      The point $\mathbf{p}_c$ is in the camera's frame. To accumulate points
+      from many viewpoints into one map, each must be rotated into the shared
+      world frame and translated to the camera's world position.
+    </p>
+    <p>
+      The camera has two angles: <strong>yaw</strong> $\psi$ (chassis heading
+      plus turret angle, rotation about world $+z$) and <strong>pitch</strong>
+      $\phi$ (a fixed downward mounting tilt). There is no roll — the camera
+      is bolted level. As in Section 2, the rotation matrix is built from the
+      images of the camera's three basis vectors:
+    </p>
+    <ul>
+      <li>$z_c$ (forward) must point along the aim direction: $(\cos\phi\cos\psi,\; \cos\phi\sin\psi,\; \sin\phi)$.</li>
+      <li>$x_c$ (right) is horizontal, perpendicular to the aim: at yaw $\psi$ this is $(\sin\psi,\; -\cos\psi,\; 0)$. The minus sign is the handedness conversion — the world's $+y$ is <em>left</em>, so the camera's right is world $-y$.</li>
+      <li>$y_c$ (down) completes the frame: $(\sin\phi\cos\psi,\; \sin\phi\sin\psi,\; -\cos\phi)$.</li>
+    </ul>
+    <p>Those three as columns give the camera-to-world rotation:</p>
+    <div class="eq-block">
+      $$
+      R_{cw} =
+      \begin{pmatrix}
+      \sin\psi & \sin\phi\cos\psi & \cos\phi\cos\psi \\
+      -\cos\psi & \sin\phi\sin\psi & \cos\phi\sin\psi \\
+      0 & -\cos\phi & \sin\phi
+      \end{pmatrix}
+      $$
+    </div>
+    <p>Multiplying out $R_{cw}\,\mathbf{p}_c$ and grouping the repeated subexpression gives exactly the code:</p>
+    <div class="eq-block">
+      $$
+      \begin{aligned}
+      a &= y_c \sin\phi + z_c \cos\phi &&\text{(the horizontal component)}\\
+      w_x &= a\cos\psi + x_c \sin\psi \\
+      w_y &= a\sin\psi - x_c \cos\psi \\
+      w_z &= z_c \sin\phi - y_c \cos\phi
+      \end{aligned}
+      $$
+    </div>
+    <p>And the world-frame point is that vector added to the camera's own position:</p>
+    <div class="eq-block">
+      $$ \mathbf{p}_{\text{world}} = \mathbf{c}_{\text{world}} + (w_x,\, w_y,\, w_z) $$
+    </div>
+    <div class="check">
+      <strong>Two checks that this matrix is right</strong>
+      <p>
+        <em>It is a proper rotation.</em> Verified numerically across the
+        full range of $\psi$ and $\phi$: the columns are orthonormal to
+        within $3\times10^{-16}$ and $\det R_{cw} = 1$ to the same precision.
+        A determinant of $-1$ would mean a reflection had crept in — the
+        classic symptom of a mixed-up handedness convention, and exactly the
+        bug this check would catch.
+      </p>
+      <p>
+        <em>It agrees with the simulator.</em> Set $x_c = y_c = 0,\, z_c = d$
+        (the centre pixel). Then $a = d\cos\phi$ and the result collapses to
+        $d\,(\cos\phi\cos\psi,\; \cos\phi\sin\psi,\; \sin\phi)$ — identical to
+        the ray direction the independently-written simulated depth scanner
+        uses. Two separately derived pieces of code agreeing is meaningful
+        evidence neither invented its own convention.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="pnp">
+    <h2 class="topic-title">15. Recovering pose from a marker (Rodrigues &amp; PnP)</h2>
+    <p class="source-ref">pi/scout/vision.py</p>
+    <p>
+      Section 5 assumed we could measure $\text{marker}_{\text{camera}}$.
+      Here is how. An ArUco marker is a square of known physical side length
+      $s$ carrying a binary pattern that identifies it. Detection returns its
+      four corners in pixel coordinates, and we know their positions in the
+      marker's own frame:
+    </p>
+    <div class="eq-block">
+      $$ \mathbf{P}_i \in \left\{ \left(\pm\tfrac{s}{2},\, \pm\tfrac{s}{2},\, 0\right) \right\} $$
+    </div>
+    <p>
+      This is the <strong>Perspective-n-Point</strong> problem: given $n$ 3D
+      points, their 2D projections, and $K$, find the rotation $R$ and
+      translation $\mathbf{t}$ placing the object relative to the camera.
+      Formally it is a least-squares problem — minimize <em>reprojection
+      error</em>, the total squared pixel distance between where corners were
+      seen and where the candidate pose predicts they'd land:
+    </p>
+    <div class="eq-block">
+      $$ (R^\star, \mathbf{t}^\star) = \arg\min_{R,\,\mathbf{t}} \sum_{i=1}^{n} \big\lVert \mathbf{u}_i - \pi\big(K(R\,\mathbf{P}_i + \mathbf{t})\big) \big\rVert^2 $$
+    </div>
+    <p>
+      where $\pi$ is the divide-by-$z$ from Section 12. Four coplanar corners
+      is enough to determine the six unknowns. OpenCV's <code>solvePnP</code>
+      solves this; the project uses it rather than reimplementing it.
+    </p>
+
+    <h3>Rodrigues' rotation formula</h3>
+    <p>
+      <code>solvePnP</code> returns rotation as a 3-vector $\mathbf{r}$, not a
+      matrix — the <strong>axis-angle</strong> representation, where the
+      direction $\hat{\mathbf{r}} = \mathbf{r}/\lVert\mathbf{r}\rVert$ is the
+      axis and the magnitude $\varphi = \lVert\mathbf{r}\rVert$ is the angle.
+      Three numbers instead of nine, with no orthonormality constraint to
+      maintain. Converting to a matrix uses Rodrigues' formula:
+    </p>
+    <div class="eq-block">
+      $$ R = I + \sin\varphi\,[\hat{\mathbf{r}}]_\times + (1-\cos\varphi)\,[\hat{\mathbf{r}}]_\times^2 $$
+    </div>
+    <p>
+      where $[\hat{\mathbf{r}}]_\times$ is the skew-symmetric matrix
+      representing "cross product with $\hat{\mathbf{r}}$":
+    </p>
+    <div class="eq-block">
+      $$
+      [\hat{\mathbf{r}}]_\times = \begin{pmatrix} 0 & -r_3 & r_2 \\ r_3 & 0 & -r_1 \\ -r_2 & r_1 & 0 \end{pmatrix},
+      \qquad [\hat{\mathbf{r}}]_\times \mathbf{v} = \hat{\mathbf{r}} \times \mathbf{v}
+      $$
+    </div>
+    <p>
+      The formula's logic: decompose any vector into a part along the axis
+      (unchanged by the rotation) and a part perpendicular to it (rotated
+      within a plane). The three terms are the original vector, the
+      perpendicular part scaled by $\sin\varphi$, and a correction of
+      $(1-\cos\varphi)$ — a 2D rotation expressed in a basis built from the
+      axis.
+    </p>
+
+    <h3>Projecting onto the floor</h3>
+    <p>
+      The full result is 3D, but the localization chain in Section 5 is 2D.
+      Because both camera and markers are mounted roughly level, we can drop
+      to the floor plane with little loss. Reading off the components — and
+      recalling the camera frame is $x$ right, $y$ down, $z$ forward:
+    </p>
+    <ul>
+      <li>Forward distance to the marker is $t_z$.</li>
+      <li>Sideways offset is $-t_x$ (camera $+x$ is right; world $+y$ is left).</li>
+      <li>The marker's facing angle is its outward normal — its own $+z$ axis, which is the <em>third column</em> of $R$ — projected onto the floor:</li>
+    </ul>
+    <div class="eq-block">
+      $$ \theta_{\text{marker}} = -\operatorname{atan2}\big(R_{13},\; R_{33}\big) $$
+    </div>
+    <p>
+      The leading minus converts OpenCV's clockwise-positive convention
+      (viewed from above) to this project's counter-clockwise-positive one.
+      <code>atan2</code> rather than <code>atan</code> because it uses the
+      signs of both arguments to get the correct quadrant over the full
+      $360°$.
+    </p>
+    <div class="note">
+      <strong>Every sign here was verified, not assumed</strong>
+      <p>
+        Three sign conventions collide in this section, and getting one wrong
+        produces a map that looks plausible but is mirrored. Rather than
+        trust documentation, the tests render a synthetic image of a marker
+        at a known pose, run it through real detection and
+        <code>solvePnP</code>, push the result through the Section 5 chain,
+        and check the recovered chassis pose against ground truth. Residual
+        error is around 30 mm at 1.2 m range, which is rasterization noise
+        amplified by the lever arm — bounded by optics, not by a mistake.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== PART IV ============================== -->
+  <div class="part-head">Part IV — Building a surface</div>
+
+  <section class="topic" id="isosurface">
+    <h2 class="topic-title">16. Scalar fields and isosurfaces</h2>
+    <p class="source-ref">pi/web/scene.html, pi/tools/mesh_reconstruct.py</p>
+    <p>
+      Parts I–III produce a <strong>point cloud</strong>: millions of
+      isolated 3D points with colours. But a point cloud is not a surface —
+      it has no faces, no interior, no notion of "inside". Turning it into a
+      renderable mesh needs an intermediate representation.
+    </p>
+    <p>
+      The standard one is an <strong>implicit surface</strong>. Instead of
+      storing the surface, define a scalar field $F : \mathbb{R}^3 \to
+      \mathbb{R}$ and let the surface be a level set of it:
+    </p>
+    <div class="eq-block">
+      $$ S = \big\{\, \mathbf{x} \in \mathbb{R}^3 \;:\; F(\mathbf{x}) = \tau \,\big\} $$
+    </div>
+    <p>
+      A familiar example: $F(\mathbf{x}) = \lVert\mathbf{x}\rVert$ with
+      $\tau = r$ gives a sphere of radius $r$. The field is defined
+      everywhere; the surface is where it crosses a threshold.
+    </p>
+    <p>
+      Two facts from calculus make this representation useful. First, the
+      gradient $\nabla F$ is perpendicular to every level set, so it gives
+      surface normals for free — which is what lighting needs. Second, the
+      sign of $F - \tau$ classifies inside from outside, so intersection and
+      containment tests become arithmetic comparisons.
+    </p>
+    <p>
+      The live browser view builds $F$ on a $64^3$ voxel grid using a
+      multi-source breadth-first search: seed every voxel containing a
+      scanned point with value $0$, and let each BFS ring outward take a
+      higher value. Since BFS explores in order of increasing depth, each
+      voxel is first reached by its nearest seed, so
+    </p>
+    <div class="eq-block">
+      $$ F(\mathbf{v}) \;\approx\; \Delta \cdot \min_{\text{seeds } s} \; \operatorname{dist}_{\text{grid}}(s, \mathbf{v}) $$
+    </div>
+    <p>
+      This approximates a <em>signed distance field</em>. Honestly, it's a
+      coarse approximation: BFS over 6-connected neighbours measures
+      Manhattan distance in grid steps, not Euclidean distance, so the level
+      sets are slightly faceted rather than perfectly round. It is chosen
+      because it costs one linear-time pass and can rebuild every second in a
+      browser while the robot is still exploring.
+    </p>
+  </section>
+
+  <section class="topic" id="marching">
+    <h2 class="topic-title">17. Marching cubes</h2>
+    <p class="source-ref">pi/web/scene.html</p>
+    <p>
+      Given the field, extract the triangle mesh at $F = \tau$. The
+      <strong>marching cubes</strong> algorithm processes each grid cell — a
+      cube with eight sampled corners — independently.
+    </p>
+    <p>
+      Classify each corner as inside ($F < \tau$) or outside. Eight corners
+      with two states each gives $2^8 = 256$ configurations, precomputed in a
+      lookup table mapping each to the triangles needed. The key observation:
+      the surface must cross an edge exactly when that edge's two endpoints
+      are classified differently. By the intermediate value theorem, a
+      continuous field taking values on either side of $\tau$ must equal
+      $\tau$ somewhere between.
+    </p>
+    <p>
+      To place that crossing precisely, assume $F$ varies linearly along the
+      short edge and solve for where it equals $\tau$:
+    </p>
+    <div class="eq-block">
+      $$ \mu = \frac{\tau - F(\mathbf{P}_1)}{F(\mathbf{P}_2) - F(\mathbf{P}_1)}, \qquad \mathbf{X} = \mathbf{P}_1 + \mu\,(\mathbf{P}_2 - \mathbf{P}_1) $$
+    </div>
+    <p>
+      This <em>linear interpolation</em> is what makes the output smooth
+      rather than blocky: without it, vertices would snap to edge midpoints
+      and the mesh would look like Minecraft. With it, vertex positions vary
+      continuously as the field does.
+    </p>
+    <p>
+      Concretely, with this project's values — field $0$ at a seeded voxel,
+      $40$ one ring out, $200$ in empty space, and threshold $\tau = 80$ —
+      an edge from a ring-1 voxel to an empty one places its vertex at
+    </p>
+    <div class="eq-block">
+      $$ \mu = \frac{80 - 40}{200 - 40} = 0.25 $$
+    </div>
+    <p>
+      a quarter of the way out, so the reconstructed surface sits just
+      <em>outside</em> the scanned points rather than cutting through them.
+      Because adjacent cubes share edges and therefore compute identical
+      crossing points, the triangles join up seamlessly into a closed mesh
+      with no cracks — the property that makes the algorithm work at all.
+    </p>
+  </section>
+
+  <section class="topic" id="poisson">
+    <h2 class="topic-title">18. Poisson surface reconstruction</h2>
+    <p class="source-ref">pi/tools/mesh_reconstruct.py</p>
+    <p>
+      The offline exporter uses a more principled method for higher quality.
+      Consider the <strong>indicator function</strong> $\chi$, equal to $1$
+      inside the object and $0$ outside. Its gradient $\nabla\chi$ is zero
+      everywhere except at the surface, where it spikes in the direction of
+      the surface normal.
+    </p>
+    <p>
+      Reading that backwards gives an idea: if we can estimate the normal
+      field $\vec{N}$ from the point cloud (each point's normal from the
+      plane best fitting its neighbours), then we are looking for a function
+      whose gradient matches those normals — $\nabla\chi \approx \vec{N}$.
+      That system is overdetermined and has no exact solution for noisy data,
+      so take the divergence of both sides, which turns it into a
+      well-studied second-order PDE:
+    </p>
+    <div class="eq-block">
+      $$ \nabla \cdot \nabla \chi = \nabla \cdot \vec{N} \qquad\Longleftrightarrow\qquad \nabla^2 \chi = \nabla \cdot \vec{N} $$
+    </div>
+    <p>
+      That is <strong>Poisson's equation</strong>, where $\nabla^2 =
+      \frac{\partial^2}{\partial x^2} + \frac{\partial^2}{\partial y^2} +
+      \frac{\partial^2}{\partial z^2}$ is the Laplacian. Discretized over an
+      adaptive octree it becomes a large sparse linear system, solved
+      numerically; marching cubes then extracts the mesh from the resulting
+      $\chi$. The project calls Open3D's implementation rather than writing
+      its own.
+    </p>
+    <p>
+      The payoff over the BFS field is that Poisson solves globally — every
+      point influences the whole solution — so it fills small gaps smoothly
+      and suppresses noise, giving genuinely smooth surfaces instead of
+      faceted ones.
+    </p>
+    <div class="note">
+      <strong>Where the assumption breaks</strong>
+      <p>
+        Poisson assumes a closed, evenly sampled surface. A robot's scan is
+        neither: it has real holes where nothing was ever observed. Because
+        the method is global and smooth, it happily interpolates a confident
+        surface straight through those holes — inventing geometry. Trimming
+        the lowest-density vertices removes the worst of it, but this is the
+        honest reason both methods are kept: Poisson looks better where data
+        exists, while the voxel method's holes are at least truthful about
+        what was never seen.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic">
+    <h2 class="topic-title">Where to go next</h2>
+    <p>
+      The natural continuations, in rough order of difficulty: proper
+      <em>SLAM</em> (simultaneous localization and mapping), where the map
+      and the trajectory are optimized jointly rather than trusting odometry
+      between landmark sightings; a <em>Kalman</em> or <em>particle
+      filter</em> to track pose uncertainty as a distribution instead of a
+      single estimate; and metric-scale recovery for the monocular depth,
+      fusing the ultrasonic's absolute distances with the network's relative
+      ones.
+    </p>
+    <p>
+      All the code discussed here is on
+      <a href="https://github.com/akivamprager/nxt-rpi">GitHub</a>, and every
+      derivation above has a corresponding test that would fail if the
+      derivation were wrong.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="index.html">← Back to the Scout overview</a> · <a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
