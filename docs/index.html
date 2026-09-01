@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scout — an autonomous room-mapping robot</title>
 <meta name="description" content="A LEGO Mindstorms NXT + Raspberry Pi robot that explores a room on its own and builds a live 3D map you can watch and rotate in your browser.">
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-clike.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
 <style>
   :root {
     --bg: #fbfaf7;
@@ -106,6 +109,12 @@
   }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   p code, li code { background: var(--accent-soft); color: #7a3110; padding: 1px 6px; border-radius: 5px; font-size: 0.92em; }
+  /* Minimal Prism theme tuned to the page's warm palette instead of a
+     stock dark theme, so highlighted code doesn't clash with --accent. */
+  pre .token.function { color: #f2c14e; }
+  pre .token.string { color: #a8c66c; }
+  pre .token.comment { color: #8a8377; font-style: italic; }
+  pre .token.punctuation { color: #b8b2a4; }
 
   .status-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
   .status-table th, .status-table td { text-align: start; padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -348,7 +357,7 @@
       <div class="card">
         <h3>Run it on your own machine</h3>
         <p style="margin-bottom: 14px;">Standard library only — nothing to install.</p>
-        <pre><code>git clone https://github.com/akivamprager/nxt-rpi
+        <pre><code class="language-bash">git clone https://github.com/akivamprager/nxt-rpi
 cd nxt-rpi
 python3 pi/tools/demo_explore.py</code></pre>
       </div>
@@ -626,7 +635,7 @@ python3 pi/tools/demo_explore.py</code></pre>
       <div class="card">
         <h3>הריצו על המחשב שלכם</h3>
         <p style="margin-bottom: 14px;">ספרייה סטנדרטית בלבד — אין מה להתקין.</p>
-        <pre dir="ltr"><code>git clone https://github.com/akivamprager/nxt-rpi
+        <pre dir="ltr"><code class="language-bash">git clone https://github.com/akivamprager/nxt-rpi
 cd nxt-rpi
 python3 pi/tools/demo_explore.py</code></pre>
       </div>

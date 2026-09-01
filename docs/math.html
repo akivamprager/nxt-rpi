@@ -19,12 +19,22 @@
         // typesetting finishes rather than fighting MathJax's own CSS.
         return MathJax.startup.defaultPageReady().then(() => {
           document.querySelectorAll(".eq-block").forEach((el) => { el.scrollLeft = 0; });
+          // See the language-toggle script near the end of <body> for why
+          // this fires here rather than at page load: both language blocks
+          // must stay visible through typesetting for MathJax to measure
+          // them correctly.
+          window.__mathReady = true;
+          if (window.__applyInitialLang) window.__applyInitialLang();
         });
       },
     },
   };
 </script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-clike.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
 <style>
   :root {
     --bg: #fbfaf7; --bg-alt: #f3f0e9; --ink: #24211c; --ink-soft: #5c574c;
@@ -35,8 +45,21 @@
     margin: 0; background: var(--bg); color: var(--ink);
     font: 16.5px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
+  [lang="he"] { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", Arial, sans-serif; }
   a { color: var(--accent); }
   .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  #langToggle {
+    position: fixed; top: 14px; z-index: 50; inset-inline-end: 16px;
+    display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  }
+  #langToggle button {
+    border: none; background: transparent; padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+  }
+  #langToggle button.active { background: var(--accent); color: #fff; }
+  .hidden-lang { display: none !important; }
 
   header {
     background: linear-gradient(180deg, var(--bg-alt), var(--bg));
@@ -118,10 +141,49 @@
      keeps a future one from silently breaking the page layout. */
   mjx-container:not([display="true"]) { max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }
 
+  .code-toggle {
+    display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 16px;
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; color: var(--ink-soft); cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .code-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .code-panel { margin: -6px 0 18px; }
+  .code-panel[hidden] { display: none; }
+  .code-panel .file-path { font-size: 12px; color: var(--ink-soft); margin: 0 0 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: start; }
+  .code-panel pre {
+    background: #1c1a17; color: #f3f0e9; padding: 14px 18px; border-radius: 10px;
+    overflow-x: auto; font-size: 12.5px; line-height: 1.6; direction: ltr; text-align: left; margin: 0;
+  }
+  .code-panel pre code { background: none; color: inherit; padding: 0; font-size: 1em; }
+  /* Minimal Prism theme tuned to the page's warm palette instead of a
+     stock dark theme, so highlighted code doesn't clash with --accent. */
+  .code-panel .token.comment { color: #8a8377; font-style: italic; }
+  .code-panel .token.keyword,
+  .code-panel .token.decorator { color: #ef8354; }
+  .code-panel .token.string { color: #a8c66c; }
+  .code-panel .token.function { color: #f2c14e; }
+  .code-panel .token.number,
+  .code-panel .token.boolean,
+  .code-panel .token.constant { color: #d19a66; }
+  .code-panel .token.class-name,
+  .code-panel .token.builtin { color: #e7b8c4; }
+  .code-panel .token.operator,
+  .code-panel .token.punctuation { color: #b8b2a4; }
+  .code-panel .token.parameter { color: #f3f0e9; }
+
   footer { padding: 30px 0 56px; color: var(--ink-soft); font-size: 14px; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
+
+<div id="langToggle">
+  <button id="langBtnEn" class="active" data-lang="en">EN</button>
+  <button id="langBtnHe" data-lang="he">עברית</button>
+</div>
+
+<div id="content-en" lang="en" dir="ltr">
 
 <header>
   <div class="wrap">
@@ -199,6 +261,26 @@
       Part III, uses a <em>different</em> convention (OpenCV's), and
       converting between them is where the sign errors live.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/pose2d.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class Pose2D:
+    x_mm: float
+    y_mm: float
+    heading_deg: float
+
+    def normalized(self) -&gt; "Pose2D":
+        return Pose2D(self.x_mm, self.y_mm, _normalize_deg(self.heading_deg))
+
+def _normalize_deg(degrees: float) -&gt; float:
+    """Wrap into [-180, 180), matching Protocol.normaliseDegrees in Java."""
+    while degrees &gt;= 180.0:
+        degrees -= 360.0
+    while degrees &lt; -180.0:
+        degrees += 360.0
+    return degrees</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="rotation">
@@ -252,6 +334,19 @@
       $-1$ would mean a reflection is hiding in there. We'll use this as a
       correctness check on a 3D matrix later.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/pose2d.py — cos_h, sin_h are $R(\theta)$'s two independent numbers</p>
+      <pre><code class="language-python">def compose(a: Pose2D, b: Pose2D) -&gt; Pose2D:
+    """b's pose, treated as local to a, expressed in a's parent frame."""
+    radians = math.radians(a.heading_deg)
+    cos_h, sin_h = math.cos(radians), math.sin(radians)
+    return Pose2D(
+        x_mm=a.x_mm + b.x_mm * cos_h - b.y_mm * sin_h,
+        y_mm=a.y_mm + b.x_mm * sin_h + b.y_mm * cos_h,
+        heading_deg=_normalize_deg(a.heading_deg + b.heading_deg),
+    )</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="poses">
@@ -355,6 +450,19 @@
         which is the practical statement that these two derivations agree
         with each other and with the code.
       </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/pose2d.py</p>
+      <pre><code class="language-python">def inverse(a: Pose2D) -&gt; Pose2D:
+    """The transform that undoes `a`."""
+    radians = math.radians(a.heading_deg)
+    cos_h, sin_h = math.cos(radians), math.sin(radians)
+    return Pose2D(
+        x_mm=-a.x_mm * cos_h - a.y_mm * sin_h,
+        y_mm=a.x_mm * sin_h - a.y_mm * cos_h,
+        heading_deg=_normalize_deg(-a.heading_deg),
+    )</code></pre>
     </div>
   </section>
 
@@ -493,6 +601,24 @@
         had a sign or ordering error the round trip would not close. This
         catches convention bugs with no camera in the room.
       </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/localize.py</p>
+      <pre><code class="language-python">def chassis_pose_from_marker(
+    marker_world: Pose2D,
+    marker_in_camera: Pose2D,
+    turret_angle_deg: float,
+    geometry: CameraGeometry,
+) -&gt; Pose2D:
+    world_camera = compose(marker_world, inverse(marker_in_camera))
+    world_turret = compose(world_camera, inverse(geometry.camera_mount))
+
+    turret_pose = Pose2D(
+        geometry.turret_mount.x_mm, geometry.turret_mount.y_mm, turret_angle_deg
+    )
+    world_chassis = compose(world_turret, inverse(turret_pose))
+    return world_chassis.normalized()</code></pre>
     </div>
   </section>
 
@@ -648,6 +774,39 @@
     <div class="eq-block">
       $$ \text{coverage} = \frac{\big|\{\,c \;:\; |\ell_c| > 0.5\,\}\big|}{\text{total cells}} $$
     </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/mapping.py</p>
+      <pre><code class="language-python">L_FREE = -0.85
+L_OCCUPIED = 0.85
+L_MIN, L_MAX = -4.0, 4.0
+FREE_THRESHOLD, OCCUPIED_THRESHOLD = -0.5, 0.5
+
+def _apply(self, cx: int, cy: int, delta: float) -&gt; None:
+    if not self.in_bounds(cx, cy):
+        return
+    value = self.log_odds[cy][cx] + delta
+    self.log_odds[cy][cx] = max(L_MIN, min(L_MAX, value))
+
+def state_at(self, cx: int, cy: int) -&gt; int:
+    if not self.in_bounds(cx, cy):
+        return UNKNOWN
+    value = self.log_odds[cy][cx]
+    if value &gt;= OCCUPIED_THRESHOLD:
+        return OCCUPIED
+    if value &lt;= FREE_THRESHOLD:
+        return FREE
+    return UNKNOWN
+
+def coverage(self) -&gt; float:
+    """Fraction of cells that are no longer unknown."""
+    total = self.width * self.height
+    known = sum(
+        1 for row in range(self.height) for col in range(self.width)
+        if self.state_at(col, row) != UNKNOWN
+    )
+    return known / total</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="sensormodel">
@@ -709,6 +868,29 @@
       manufacture obstacles that aren't there. Free space across the cone is
       the safe claim; occupancy across the cone is not.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/mapping.py — OccupancyGrid.update_ray (trimmed)</p>
+      <pre><code class="language-python">offsets = [
+    -cone_half_angle_deg + 2 * cone_half_angle_deg * i / (cone_rays - 1)
+    for i in range(cone_rays)
+]
+
+for offset in offsets:
+    radians = math.radians(bearing_deg + offset)
+    dx, dy = math.cos(radians), math.sin(radians)
+    for i in range(steps):
+        distance = i * step_mm
+        cx, cy = self.world_to_cell(x_mm + dx * distance, y_mm + dy * distance)
+        self._apply(cx, cy, L_FREE)
+
+if has_echo:
+    radians = math.radians(bearing_deg)
+    end_x = x_mm + math.cos(radians) * sweep_mm
+    end_y = y_mm + math.sin(radians) * sweep_mm
+    cx, cy = self.world_to_cell(end_x, end_y)
+    self._apply(cx, cy, L_OCCUPIED)</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="frontier">
@@ -771,6 +953,28 @@
         the right trade.
       </p>
     </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/explore.py</p>
+      <pre><code class="language-python">def find_frontier_cells(grid: OccupancyGrid) -&gt; set[tuple[int, int]]:
+    frontier = set()
+    for cy in range(grid.height):
+        for cx in range(grid.width):
+            if not grid.is_free(cx, cy):
+                continue
+            for dx, dy in _NEIGHBORS:  # 4-connected: up/down/left/right
+                nx, ny = cx + dx, cy + dy
+                if grid.in_bounds(nx, ny) and grid.is_unknown(nx, ny):
+                    frontier.add((cx, cy))
+                    break
+    return frontier
+
+def nearest_frontier(frontiers, x_mm, y_mm):
+    return min(
+        frontiers,
+        key=lambda f: math.hypot(f.centroid_x_mm - x_mm, f.centroid_y_mm - y_mm),
+    )</code></pre>
+    </div>
   </section>
 
   <!-- ============================== PART III ============================== -->
@@ -831,6 +1035,24 @@
         $\lVert \text{hit} - \mathbf{p}\rVert$ to $10^{-13}$.
       </p>
     </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/tools/sim_world.py</p>
+      <pre><code class="language-python">def _ray_segment_distance(px, py, dx, dy, segment):
+    (ax, ay), (bx, by) = segment
+    sx, sy = bx - ax, by - ay
+
+    denom = dx * sy - dy * sx
+    if abs(denom) &lt; 1e-9:
+        return None  # parallel
+
+    t = ((ax - px) * sy - (ay - py) * sx) / denom
+    u = ((ax - px) * dy - (ay - py) * dx) / denom
+
+    if t &gt;= 0.0 and 0.0 &lt;= u &lt;= 1.0:
+        return t
+    return None</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="raybox">
@@ -874,6 +1096,32 @@
       $[lo, hi]$ the ray can never enter, and otherwise that axis places no
       constraint at all and is skipped.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/tools/sim_world.py</p>
+      <pre><code class="language-python">def _ray_box_distance(px, py, pz, dx, dy, dz, box):
+    t_min, t_max = -math.inf, math.inf
+    for p, d, lo, hi in (
+        (px, dx, box.x_min, box.x_max),
+        (py, dy, box.y_min, box.y_max),
+        (pz, dz, box.z_min, box.z_max),
+    ):
+        if abs(d) &lt; 1e-9:
+            if p &lt; lo or p &gt; hi:
+                return None  # parallel to this axis and outside its slab
+            continue
+        t1, t2 = (lo - p) / d, (hi - p) / d
+        if t1 &gt; t2:
+            t1, t2 = t2, t1
+        t_min = max(t_min, t1)
+        t_max = min(t_max, t2)
+        if t_min &gt; t_max:
+            return None
+
+    if t_max &lt; 0.0:
+        return None  # box is entirely behind the ray's origin
+    return t_min if t_min &gt;= 0.0 else t_max  # ray origin starts inside the box</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="pinhole">
@@ -932,6 +1180,22 @@
       of known geometry from many angles and solve for the $K$ that best
       explains where its corners landed.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/vision.py, pi/scout/depth_estimator.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class CameraIntrinsics:
+    camera_matrix: np.ndarray  # 3x3 -- this is K
+    dist_coeffs: np.ndarray    # lens distortion, separate from K
+
+def _intrinsics_params(intrinsics):
+    return (
+        float(intrinsics.camera_matrix[0, 0]),  # fx
+        float(intrinsics.camera_matrix[1, 1]),  # fy
+        float(intrinsics.camera_matrix[0, 2]),  # cx
+        float(intrinsics.camera_matrix[1, 2]),  # cy
+    )</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="backproject">
@@ -974,6 +1238,24 @@
         metric scale needs a second source of information — a known-size
         landmark, or the ultrasonic reading — and that is not implemented yet.
       </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/depth_estimator.py — backproject_depth (trimmed)</p>
+      <pre><code class="language-python">for v in range(0, height, max(1, stride)):
+    for u in range(0, width, max(1, stride)):
+        d = float(depth_mm[v, u])
+        if not math.isfinite(d) or d &lt;= 0.0 or d &gt; max_range_mm:
+            continue
+
+        wx, wy, wz = rot.camera_ray_to_world(
+            (u - cx) / fx * d, (v - cy) / fy * d, d
+        )
+        points.append((
+            camera_pose.x_mm + wx,
+            camera_pose.y_mm + wy,
+            camera_pose.z_mm + wz,
+        ))</code></pre>
     </div>
   </section>
 
@@ -1041,6 +1323,27 @@
         uses. Two separately derived pieces of code agreeing is meaningful
         evidence neither invented its own convention.
       </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/depth_estimator.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class _CameraRotation:
+    cy_: float; sy_: float; cp_: float; sp_: float
+
+    @classmethod
+    def from_pose(cls, camera_pose):
+        yaw_r = math.radians(camera_pose.yaw_deg)
+        pitch_r = math.radians(camera_pose.pitch_deg)
+        return cls(math.cos(yaw_r), math.sin(yaw_r),
+                    math.cos(pitch_r), math.sin(pitch_r))
+
+    def camera_ray_to_world(self, x_c, y_c, z_c):
+        a = y_c * self.sp_ + z_c * self.cp_
+        wx = a * self.cy_ + x_c * self.sy_
+        wy = a * self.sy_ - x_c * self.cy_
+        wz = z_c * self.sp_ - y_c * self.cp_
+        return wx, wy, wz</code></pre>
     </div>
   </section>
 
@@ -1140,6 +1443,16 @@
         amplified by the lever arm — bounded by optics, not by a mistake.
       </p>
     </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/scout/vision.py</p>
+      <pre><code class="language-python">def _rvec_tvec_to_pose2d(rvec, tvec) -&gt; Pose2D:
+    rotation, _ = cv2.Rodrigues(rvec)  # axis-angle -&gt; 3x3 matrix
+    tvec = tvec.ravel()
+    normal = rotation[:, 2]  # marker's own +z axis, in camera coords
+    heading_deg = -math.degrees(math.atan2(normal[0], normal[2]))
+    return Pose2D(x_mm=float(tvec[2]), y_mm=float(-tvec[0]), heading_deg=heading_deg)</code></pre>
+    </div>
   </section>
 
   <!-- ============================== PART IV ============================== -->
@@ -1192,6 +1505,26 @@
       because it costs one linear-time pass and can rebuild every second in a
       browser while the robot is still exploring.
     </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/web/scene.html — multi-source BFS over the voxel grid</p>
+      <pre><code class="language-javascript">const RING_VALUES = [0.0, 40.0]; // ring 0 = the point itself
+
+for (let ring = 0; ring &lt; RING_VALUES.length - 1 &amp;&amp; frontier.length &gt; 0; ring++) {
+  const nextFrontier = [];
+  for (const idx of frontier) {
+    // ...decode idx back to (x, y, z)...
+    for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {  // 6-connected
+      const nidx = size2 * nz + size * ny + nx;
+      if (ringOf[nidx] !== -1) continue;  // reached at a nearer ring already
+      ringOf[nidx] = ring + 1;
+      field[nidx] = RING_VALUES[ring + 1];
+      nextFrontier.push(nidx);
+    }
+  }
+  frontier = nextFrontier;
+}</code></pre>
+    </div>
   </section>
 
   <section class="topic" id="marching">
@@ -1291,6 +1624,27 @@
         what was never seen.
       </p>
     </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; Show the code" data-hide="▾ Hide the code">&lt;/&gt; Show the code</button>
+    <div class="code-panel" hidden>
+      <p class="file-path">pi/tools/mesh_reconstruct.py</p>
+      <pre><code class="language-python">def reconstruct_mesh(pcd, depth=9, density_trim_quantile=0.05):
+    import open3d as o3d
+
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=60.0, max_nn=30)
+    )
+    pcd.orient_normals_consistent_tangent_plane(30)
+
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        pcd, depth=depth
+    )
+    # Trim low-density vertices -- Poisson extrapolates through real scan
+    # gaps rather than leaving a hole; this is the standard mitigation.
+    densities = np.asarray(densities)
+    threshold = np.quantile(densities, density_trim_quantile)
+    mesh.remove_vertices_by_mask(densities &lt; threshold)
+    return mesh</code></pre>
+    </div>
   </section>
 
   <section class="topic">
@@ -1320,6 +1674,1496 @@
     <p><a href="index.html">← Back to the Scout overview</a> · <a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
   </div>
 </footer>
+
+</div>
+<!-- ============================================================ /ENGLISH ============================================================ -->
+
+<div id="content-he" lang="he" dir="rtl">
+<header>
+  <div class="wrap">
+    <a class="back-link" href="index.html">→ חזרה לעמוד הראשי</a>
+    <h1>המתמטיקה שמאחורי סקאוט, מהיסודות ומעלה</h1>
+    <p>
+      כל משוואה כאן נגזרת, לא רק נטענת כעובדה, וכל אחת מהן ממומשת בפועל
+      בקוד ומכוסה בבדיקות (tests). כל סעיף מציין את קובץ המקור שממנו הוא
+      לקוח, כדי שתוכלו לקרוא את הגזירה ואת הקוד זה לצד זה.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="prereq">
+    <strong>מה צריך לדעת מראש</strong>
+    אלגברה לינארית של שנה א' (מטריצות, כפל מטריצות, העתקות לינאריות,
+    דטרמיננטות, אורתוגונליות) וחשבון אינפיניטסימלי (נגזרות, נגזרות חלקיות).
+    זהו. כל השאר — עדכונים בייסיאניים, מודלים של מצלמה, גאומטריה
+    פרויקטיבית, משטחי-איזו — נבנה כאן מאפס, כי רוב זה לא מכוסה בקורס שנה א'.
+  </div>
+
+  <nav class="toc">
+    <h2>תוכן העניינים</h2>
+    <ol>
+      <li class="part">חלק א' — איפה הדברים נמצאים</li>
+      <li><a href="#conventions-he">מוסכמות: מערכות ייחוס, יחידות, זוויות</a></li>
+      <li><a href="#rotation-he">סיבובים במישור, נגזרים מהיסוד</a></li>
+      <li><a href="#poses-he">טרנספורמציות קשיחות: הרכבה והיפוך</a></li>
+      <li><a href="#homogeneous-he">למה זה בעצם כפל מטריצות</a></li>
+      <li><a href="#chain-he">שרשור מערכות ייחוס: משוואת הלוקליזציה</a></li>
+      <li class="part">חלק ב' — במה הרובוט מאמין</li>
+      <li><a href="#bayes-he">הסתברות, בייס, ובעיית התפוסה</a></li>
+      <li><a href="#logodds-he">מבייס ל-log-odds</a></li>
+      <li><a href="#sensormodel-he">מודל החיישן והחרוט</a></li>
+      <li><a href="#frontier-he">חקירת חזיתות כבעיית גרפים</a></li>
+      <li class="part">חלק ג' — ראייה</li>
+      <li><a href="#raysegment-he">חיתוך קרן/קטע</a></li>
+      <li><a href="#raybox-he">חיתוך קרן/תיבה (שיטת ה-slabs)</a></li>
+      <li><a href="#pinhole-he">מודל מצלמת חור-הסיכה</a></li>
+      <li><a href="#backproject-he">הטלה לאחור: מפיקסלים לנקודות תלת-ממדיות</a></li>
+      <li><a href="#rot3d-he">סיבוב המצלמה אל תוך העולם</a></li>
+      <li><a href="#pnp-he">שחזור תנוחה מסמן (רודריגז ו-PnP)</a></li>
+      <li class="part">חלק ד' — בניית משטח</li>
+      <li><a href="#isosurface-he">שדות סקלריים ומשטחי-איזו</a></li>
+      <li><a href="#marching-he">Marching Cubes</a></li>
+      <li><a href="#poisson-he">שחזור משטח בשיטת פואסון</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================== חלק א' ============================== -->
+  <div class="part-head">חלק א' — איפה הדברים נמצאים</div>
+
+  <section class="topic" id="conventions-he">
+    <h2 class="topic-title">1. מוסכמות: מערכות ייחוס, יחידות, זוויות</h2>
+    <p class="source-ref">pi/scout/pose2d.py, pi/scout/protocol.py</p>
+    <p>
+      לפני שלמשוואה כלשהי יש משמעות, צריך לקבוע את המוסכמות. כמעט כל באג
+      בגאומטריה של רובוטיקה הוא חוסר-התאמה במוסכמות, לא טעות באלגברה, אז
+      שווה לנסח אותן במדויק.
+    </p>
+    <ul>
+      <li><strong>יחידות:</strong> מילימטרים לאורך, מעלות לזוויות בנתונים המאוחסנים (המרה לרדיאנים רק בתוך פונקציות טריגונומטריות).</li>
+      <li><strong>מערכת הצירים העולמית:</strong> $x$ קדימה, $y$ <em>שמאלה</em>, $z$ למעלה. הרובוט מתחיל בראשית הצירים.</li>
+      <li><strong>כיוון (heading):</strong> $\theta = 0$ פירושו פונה ל-$+x$; $\theta$ גדל <em>נגד כיוון השעון</em> כשמסתכלים מלמעלה. כך ש-$\theta = 90°$ פונה ל-$+y$.</li>
+      <li><strong>גלגול זוויות:</strong> כל הכיוונים מנורמלים לטווח $[-180°, 180°)$.</li>
+    </ul>
+    <p>
+      זוהי מערכת צירים <em>ימנית</em>: אם תצביעו עם האגודל הימני לאורך $+z$
+      (למעלה), האצבעות מתעקלות מ-$+x$ לכיוון $+y$ — כיוון הסיבוב החיובי.
+      המצלמה, כפי שנראה בחלק ג', משתמשת במוסכמה <em>שונה</em> (זו של
+      OpenCV), וההמרה ביניהן היא המקום שבו חיות שגיאות הסימן.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/pose2d.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class Pose2D:
+    x_mm: float
+    y_mm: float
+    heading_deg: float
+
+    def normalized(self) -&gt; "Pose2D":
+        return Pose2D(self.x_mm, self.y_mm, _normalize_deg(self.heading_deg))
+
+def _normalize_deg(degrees: float) -&gt; float:
+    """Wrap into [-180, 180), matching Protocol.normaliseDegrees in Java."""
+    while degrees &gt;= 180.0:
+        degrees -= 360.0
+    while degrees &lt; -180.0:
+        degrees += 360.0
+    return degrees</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="rotation-he">
+    <h2 class="topic-title">2. סיבובים במישור, נגזרים מהיסוד</h2>
+    <p class="source-ref">pi/scout/pose2d.py</p>
+    <p>
+      סיבוב סביב הראשית הוא העתקה לינארית. מאלגברה לינארית, העתקה לינארית
+      נקבעת לחלוטין על ידי מה שהיא עושה לוקטורי הבסיס — והמטריצה שלה מכילה
+      את התמונות שלהם כ<em>עמודות</em>. אז כדי לבנות את מטריצת הסיבוב, צריך
+      רק לשאול לאן הולכים $e_1$ ו-$e_2$.
+    </p>
+    <p>
+      סיבוב של $e_1 = (1, 0)$ נגד כיוון השעון בזווית $\theta$ מתווה מעגל
+      יחידה, ונוחת ב-$(\cos\theta, \sin\theta)$ — זו ההגדרה של קוסינוס
+      וסינוס. סיבוב של $e_2 = (0,1)$, שכבר נמצא $90°$ קדימה, נוחת בזווית
+      $\theta + 90°$, ובעזרת $\cos(\theta + 90°) = -\sin\theta$,
+      $\sin(\theta+90°) = \cos\theta$, זה נותן $(-\sin\theta, \cos\theta)$.
+      בסידור כעמודות:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\[2pt] \sin\theta & \cos\theta \end{pmatrix}
+      $$
+    </div>
+    <p>שלוש תכונות שנשען עליהן כל הזמן, כולן ניתנות להוכחה בשורה או שתיים:</p>
+    <ol class="steps">
+      <li>
+        <strong>סיבובים מורכבים על ידי חיבור זוויות:</strong>
+        $R(\alpha)R(\beta) = R(\alpha + \beta)$. אם כופלים את המטריצות,
+        האיברים הם בדיוק נוסחאות חיבור הזוויות לסינוס ולקוסינוס. זו
+        <em>הסיבה</em> שאפשר פשוט לחבר את שדה הכיוון בתנוחה במקום לנהל
+        חשבונאות של מטריצות.
+      </li>
+      <li>
+        <strong>סיבובים הם אורתוגונליים:</strong> העמודות הן באורך יחידה
+        וניצבות זו לזו, ולכן $R^\top R = I$, כלומר $R^{-1} = R^\top$. היפוך
+        סיבוב לא עולה כלום — פשוט משחלפים אותו.
+      </li>
+      <li>
+        <strong>היפוך פירושו שלילת הזווית:</strong>
+        $R(\theta)^{-1} = R(-\theta)$, שנובע מתכונה 1 עם $\beta = -\alpha$.
+        ומכיוון ש-$\cos$ זוגית ו-$\sin$ אי-זוגית, $R(-\theta) = R(\theta)^\top$
+        — עקבי עם תכונה 2.
+      </li>
+    </ol>
+    <p>
+      שווה גם לשים לב: $\det R(\theta) = \cos^2\theta + \sin^2\theta = 1$.
+      מטריצה אורתוגונלית עם דטרמיננטה $+1$ היא סיבוב <em>אמיתי</em> — היא
+      משמרת אורכים, זוויות, וכיווניות (handedness). דטרמיננטה $-1$ הייתה
+      מסמנת שהשתרבבה שיקוף. נשתמש בזה כבדיקת נכונות על מטריצה תלת-ממדית
+      בהמשך.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/pose2d.py — cos_h, sin_h הם שני המספרים הבלתי-תלויים של $R(\theta)$</p>
+      <pre><code class="language-python">def compose(a: Pose2D, b: Pose2D) -&gt; Pose2D:
+    """b's pose, treated as local to a, expressed in a's parent frame."""
+    radians = math.radians(a.heading_deg)
+    cos_h, sin_h = math.cos(radians), math.sin(radians)
+    return Pose2D(
+        x_mm=a.x_mm + b.x_mm * cos_h - b.y_mm * sin_h,
+        y_mm=a.y_mm + b.x_mm * sin_h + b.y_mm * cos_h,
+        heading_deg=_normalize_deg(a.heading_deg + b.heading_deg),
+    )</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="poses-he">
+    <h2 class="topic-title">3. טרנספורמציות קשיחות: הרכבה והיפוך</h2>
+    <p class="source-ref">pi/scout/pose2d.py</p>
+    <p>
+      <strong>תנוחה (pose)</strong> היא סיבוב ועוד הזזה: היא מתארת איפה
+      מערכת צירים שלמה יושבת בתוך מערכת אחרת. נכתוב תנוחה כ-
+      $A = (\mathbf{t}_A, \theta_A)$ כאשר $\mathbf{t}_A \in \mathbb{R}^2$
+      הוא היסט הראשית ו-$\theta_A$ הוא הכיוון.
+    </p>
+    <p>
+      המשמעות של תנוחה היא ההעתקה שהיא מגדירה. אם לנקודה יש קואורדינטות
+      $\mathbf{p}$ במערכת המקומית של $A$, הקואורדינטות שלה במערכת ההורה
+      של $A$ הן:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ T_A(\mathbf{p}) = \mathbf{t}_A + R(\theta_A)\,\mathbf{p} $$
+    </div>
+    <p>
+      קודם לסובב, אחר כך להזיז. שימו לב שההעתקה הזו <em>אפינית</em>, לא
+      לינארית — $T_A(\mathbf{0}) = \mathbf{t}_A \ne \mathbf{0}$ בדרך כלל,
+      ולכן היא לא עומדת בהגדרה של העתקה לינארית. סעיף 4 מראה את התרגיל
+      הסטנדרטי להפוך אותה שוב ללינארית.
+    </p>
+
+    <h3>גזירת <code>compose</code></h3>
+    <p>
+      נניח ש-$B$ היא תנוחה המתוארת <em>בתוך</em> מערכת הצירים של $A$ (למשל,
+      מיקום הצריח על השילדה), ואנחנו רוצים את התנוחה היחידה שמתארת את $B$
+      ישירות במערכת ההורה של $A$ (הצריח בעולם). מפעילים את ההעתקות בסדר —
+      נקודה במערכת של $B$ עוברת למערכת של $A$, ואז להורה — ומפשטים:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \begin{aligned}
+      T_A\big(T_B(\mathbf{p})\big)
+        &= \mathbf{t}_A + R(\theta_A)\big[\mathbf{t}_B + R(\theta_B)\mathbf{p}\big] \\
+        &= \underbrace{\big[\mathbf{t}_A + R(\theta_A)\mathbf{t}_B\big]}_{\text{ההזזה החדשה}}
+           \;+\; \underbrace{R(\theta_A)R(\theta_B)}_{=\,R(\theta_A + \theta_B)}\mathbf{p}
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      לתוצאה יש בדיוק את הצורה של תנוחה, אז אפשר לקרוא ישירות את שני
+      המרכיבים שלה:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \operatorname{compose}(A, B) = \Big(\; \mathbf{t}_A + R(\theta_A)\,\mathbf{t}_B,\;\; \theta_A + \theta_B \;\Big)
+      $$
+    </div>
+    <p>
+      כתיבת הסיבוב לפי רכיבים נותנת בדיוק את הקוד ב-
+      <code>pose2d.compose</code>:
+      $x = x_A + x_B\cos\theta_A - y_B\sin\theta_A$ וכן
+      $y = y_A + x_B\sin\theta_A + y_B\cos\theta_A$.
+    </p>
+    <p>
+      ההרכבה היא <strong>אסוציאטיבית</strong> (זו הרכבת פונקציות) אבל
+      <strong>לא קומוטטיבית</strong> — $R(\theta_A)\mathbf{t}_B \neq
+      R(\theta_B)\mathbf{t}_A$ בדרך כלל. באופן קונקרטי: ללכת מטר אחד קדימה
+      ואז לפנות שמאלה לא מביא אתכם לאותו מקום כמו לפנות שמאלה ואז ללכת
+      קדימה. הסדר משנה, וכל שרשור בסעיף 5 תלוי בכך שהוא נכון.
+    </p>
+
+    <h3>גזירת <code>inverse</code></h3>
+    <p>
+      התנוחה ההופכית עונה על השאלה ההפוכה: בהינתן קואורדינטות של נקודה
+      במערכת ההורה, מה הן במערכת המקומית? פשוט פותרים
+      $\mathbf{q} = \mathbf{t} + R(\theta)\mathbf{p}$ עבור $\mathbf{p}$:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \mathbf{p} = R(\theta)^{-1}(\mathbf{q} - \mathbf{t})
+                 = R(-\theta)\,\mathbf{q} \;+\; \big[-R(-\theta)\,\mathbf{t}\big]
+      $$
+    </div>
+    <p>
+      זו שוב צורה של תנוחה — סיבוב ב-$-\theta$ ועוד הזזה של
+      $-R(-\theta)\mathbf{t}$. לכן:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \operatorname{inverse}(A) = \Big(-R(-\theta_A)\,\mathbf{t}_A,\;\; -\theta_A\Big) $$
+    </div>
+    <p>
+      פיתוח עם $R(-\theta) = \begin{pmatrix}\cos\theta & \sin\theta\\ -\sin\theta & \cos\theta\end{pmatrix}$
+      נותן $x = -x_A\cos\theta_A - y_A\sin\theta_A$ וכן
+      $y = x_A\sin\theta_A - y_A\cos\theta_A$ — בדיוק
+      <code>pose2d.inverse</code>.
+    </p>
+    <div class="check">
+      <strong>מאומת</strong>
+      <p>הבדיקות (tests) בודקות, עבור תנוחות אקראיות רבות,</p>
+      <div class="eq-block" dir="ltr">
+        $$ \operatorname{compose}\big(A, \operatorname{inverse}(A)\big) = \operatorname{compose}\big(\operatorname{inverse}(A), A\big) = \text{identity} $$
+      </div>
+      <p>
+        וזו הטענה המעשית שששתי הגזירות האלה מסכימות אחת עם השנייה ועם הקוד.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/pose2d.py</p>
+      <pre><code class="language-python">def inverse(a: Pose2D) -&gt; Pose2D:
+    """The transform that undoes `a`."""
+    radians = math.radians(a.heading_deg)
+    cos_h, sin_h = math.cos(radians), math.sin(radians)
+    return Pose2D(
+        x_mm=-a.x_mm * cos_h - a.y_mm * sin_h,
+        y_mm=a.x_mm * sin_h - a.y_mm * cos_h,
+        heading_deg=_normalize_deg(-a.heading_deg),
+    )</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="homogeneous-he">
+    <h2 class="topic-title">4. למה זה בעצם כפל מטריצות</h2>
+    <p>
+      סעיף 3 ציין שתנוחה היא אפינית, לא לינארית. יש תרגיל סטנדרטי שגורם לכל
+      מה שלמעלה לקרוס לאלגברה לינארית רגילה, ושווה לראות אותו כי הוא מסביר
+      <em>למה</em> ההרכבה מתנהגת כל כך דומה לכפל מטריצות: כי זה בדיוק מה
+      שהיא.
+    </p>
+    <p>
+      משכנים את המישור בתוך $\mathbb{R}^3$ על ידי הוספת $1$ לכל נקודה:
+      $(x, y) \mapsto (x, y, 1)$. ואז מגדירים את המטריצה $3\times3$:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      M_A = \begin{pmatrix} R(\theta_A) & \mathbf{t}_A \\[2pt] \mathbf{0}^\top & 1 \end{pmatrix}
+          = \begin{pmatrix} \cos\theta_A & -\sin\theta_A & x_A \\ \sin\theta_A & \cos\theta_A & y_A \\ 0 & 0 & 1\end{pmatrix}
+      $$
+    </div>
+    <p>כפל של נקודה "מורמת" ב-$M_A$ מסובב ומזיז אותה בצעד אחד:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      M_A \begin{pmatrix} \mathbf{p} \\ 1 \end{pmatrix}
+      = \begin{pmatrix} R(\theta_A)\mathbf{p} + \mathbf{t}_A \\ 1 \end{pmatrix}
+      $$
+    </div>
+    <p>עכשיו נבדוק מה כפל מטריצות עושה לשתיים כאלה — בעזרת כפל בלוקים:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      M_A M_B = \begin{pmatrix} R_A R_B & R_A \mathbf{t}_B + \mathbf{t}_A \\ \mathbf{0}^\top & 1\end{pmatrix}
+      $$
+    </div>
+    <p>
+      הבלוק השמאלי-עליון הוא הסיבוב המורכב, והימני-עליון הוא בדיוק ההזזה
+      המורכבת שגזרנו בסעיף 3. אז <strong>$\operatorname{compose}(A,B)$
+      <em>הוא</em> $M_A M_B$</strong>, ו-$\operatorname{inverse}(A)$ הוא
+      $M_A^{-1}$. אסוציאטיביות ואי-קומוטטיביות מתקבלות אז בחינם מכפל
+      מטריצות — בלי צורך בהוכחה נפרדת.
+    </p>
+    <p>
+      המטריצות האלה יוצרות חבורה (סגורה תחת כפל והיפוך, עם מטריצת היחידה
+      כאיבר היחידה) שנקראת $SE(2)$, <em>חבורת האוקלידית המיוחדת</em>
+      בשני ממדים. הקוד שומר רק $(x, y, \theta)$ במקום מטריצה מלאה
+      $3\times3$ כי שלושה מספרים זולים יותר מתשעה ונוסחת ההרכבה קצרה מספיק
+      לכתיבה ישירה — אבל המבנה שמתחת הוא החבורה הזו.
+    </p>
+    <div class="note">
+      <strong>למה זה חשוב</strong>
+      <p>
+        זה אותו תרגיל שהופך את הטלת המצלמה בסעיף 13 לניתנת לביטוי כמטריצה.
+        הוספת קואורדינטה כדי להפוך העתקות אפיניות ללינאריות נקראת שימוש
+        ב<em>קואורדינטות הומוגניות</em>, וזה הרעיון הכי-בשימוש-חוזר בכל
+        הראייה הממוחשבת הגאומטרית.
+      </p>
+    </div>
+  </section>
+
+  <section class="topic" id="chain-he">
+    <h2 class="topic-title">5. שרשור מערכות ייחוס: משוואת הלוקליזציה</h2>
+    <p class="source-ref">pi/scout/localize.py</p>
+    <p>
+      אודומטריית הגלגלים סוטה. כל החלקה של גלגל, כל מילימטר של שגיאה בקוטר
+      הגלגל הנמדד, מצטבר בלי גבול — אחרי כמה דקות האמונה של הרובוט לגבי
+      מיקומו כבר סטתה בשקט מהאמת. התיקון הוא <strong>ציון דרך
+      (landmark)</strong>: משהו במיקום ידוע וסקור שהרובוט יכול לזהות ולמדוד
+      ביחס אליו. כאן זה סמן ArUco מודפס.
+    </p>
+    <p>ישנן ארבע מערכות ייחוס במשחק, מקוננות זו בתוך זו:</p>
+    <div class="eq-block" dir="ltr">
+      $$ \text{world} \;\supset\; \text{chassis} \;\supset\; \text{turret} \;\supset\; \text{camera} $$
+    </div>
+    <p>
+      שלושה מהיחסים קבועים ונמדדים פעם אחת בזמן הבנייה:
+      $\text{camera}_{\text{mount}}$ (המצלמה על הצריח) ו-
+      $\text{turret}_{\text{mount}}$ (ציר הצריח על השילדה). אחד משתנה בכל
+      סריקה: הזווית המפוקדת של הצריח. ואחד נמדד בזמן אמת על ידי המצלמה:
+      $\text{marker}_{\text{camera}}$, תנוחת הסמן כפי שנראית מהמצלמה.
+    </p>
+    <p>
+      ללכת <em>קדימה</em> — מתנוחת שילדה ידועה למה שהמצלמה אמורה לראות —
+      זו שרשרת ישרה של הרכבות:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \begin{aligned}
+      \text{world}_{\text{turret}} &= \operatorname{compose}(\text{chassis}_{\text{world}},\; \text{turret}_{\text{pose}}) \\
+      \text{world}_{\text{camera}} &= \operatorname{compose}(\text{world}_{\text{turret}},\; \text{camera}_{\text{mount}}) \\
+      \text{marker}_{\text{camera}} &= \operatorname{compose}\big(\operatorname{inverse}(\text{world}_{\text{camera}}),\; \text{marker}_{\text{world}}\big)
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      אבל אנחנו רוצים את ה<em>הפוך</em>: אנחנו יודעים מה המצלמה ראתה
+      ורוצים את תנוחת השילדה. פותרים את השרשרת אחורה, מקלפים טרנספורמציה
+      ידועה אחת בכל פעם. כל צעד משתמש בזהות
+      $\operatorname{compose}(X, \operatorname{inverse}(X)) = I$ כדי
+      לבטל טרנספורמציה שאנחנו יודעים:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \begin{aligned}
+      \text{world}_{\text{camera}}\; &=\; \operatorname{compose}\big(\text{marker}_{\text{world}},\; \operatorname{inverse}(\text{marker}_{\text{camera}})\big) \\
+      \text{world}_{\text{turret}}\; &=\; \operatorname{compose}\big(\text{world}_{\text{camera}},\; \operatorname{inverse}(\text{camera}_{\text{mount}})\big) \\
+      \text{world}_{\text{chassis}} &=\; \operatorname{compose}\big(\text{world}_{\text{turret}},\; \operatorname{inverse}(\text{turret}_{\text{pose}})\big)
+      \end{aligned}
+      $$
+    </div>
+    <p>
+      קראו את השורה הראשונה במילים: "הסמן נמצא <em>כאן</em> בעולם, והמצלמה
+      רואה אותו <em>שם</em> ביחס לעצמה, לכן המצלמה חייבת להיות <em>כאן</em>."
+      שתי השורות הבאות הולכות אחורה במורד שרשרת ההרכבה עד לשילדה, שתנוחתה
+      המתוקנת דורסת אז את האודומטריה הסוטה.
+    </p>
+    <p>
+      דקות אחת ב-$\text{turret}_{\text{pose}}$: הוא משתמש
+      ב<em>מיקום</em> של הרכבת הצריח אבל מחליף את הכיוון שלו בזווית
+      המפוקדת הנוכחית של הצריח — כי הצריח מסתובב סביב נקודה קבועה על
+      השילדה. המיקום הוא מבני; הזווית היא בזמן אמת.
+    </p>
+    <div class="check">
+      <strong>איך זה נבדק בלי חומרה</strong>
+      <p>
+        בוחרים תנוחת שילדה אמיתית שרירותית, מריצים את השרשרת קדימה כדי
+        לחשב מה המצלמה <em>הייתה</em> רואה, מזינים את זה דרך השרשרת
+        האחורית, ובודקים שמשחזרים את התנוחה המקורית. אם לכיוון כלשהו הייתה
+        שגיאת סימן או סדר, המסע הלוך-חזור לא היה נסגר. זה תופס באגים של
+        מוסכמות בלי מצלמה בחדר.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/localize.py</p>
+      <pre><code class="language-python">def chassis_pose_from_marker(
+    marker_world: Pose2D,
+    marker_in_camera: Pose2D,
+    turret_angle_deg: float,
+    geometry: CameraGeometry,
+) -&gt; Pose2D:
+    world_camera = compose(marker_world, inverse(marker_in_camera))
+    world_turret = compose(world_camera, inverse(geometry.camera_mount))
+
+    turret_pose = Pose2D(
+        geometry.turret_mount.x_mm, geometry.turret_mount.y_mm, turret_angle_deg
+    )
+    world_chassis = compose(world_turret, inverse(turret_pose))
+    return world_chassis.normalized()</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================== חלק ב' ============================== -->
+  <div class="part-head">חלק ב' — במה הרובוט מאמין</div>
+
+  <section class="topic" id="bayes-he">
+    <h2 class="topic-title">6. הסתברות, בייס, ובעיית התפוסה</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      המפה מחלקת את הרצפה לרשת של תאים מרובעים. כל תא הוא או תפוס או פנוי —
+      אבל הרובוט אף פעם לא צופה בזה ישירות. הוא צופה בפינגים סוניים
+      רועשים וצריך לשמר <em>אמונה (belief)</em>. האמונה הזו היא הסתברות,
+      ועדכון נכון שלה דורש את כלל בייס, אז בואו נבנה אותו.
+    </p>
+    <p>
+      נכתוב $m$ עבור המאורע "התא הזה תפוס" ו-$\lnot m$ עבור "הוא פנוי".
+      <strong>ההסתברות המותנית</strong> $P(A \mid B)$ היא ההסתברות ל-$A$
+      בהינתן ש-$B$ ידוע שקרה, והיא מוגדרת כ-$P(A \cap B) / P(B)$. מכיוון
+      ש-$P(A \cap B)$ סימטרי ב-$A$ וב-$B$, אפשר לכתוב אותו בשתי דרכים:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ P(A\mid B)\,P(B) \;=\; P(A \cap B) \;=\; P(B \mid A)\,P(A) $$
+    </div>
+    <p>חלוקה ב-$P(B)$ נותנת את <strong>כלל בייס</strong>:</p>
+    <div class="eq-block" dir="ltr">
+      $$ P(A \mid B) = \frac{P(B\mid A)\,P(A)}{P(B)} $$
+    </div>
+    <p>
+      במקרה שלנו, כאשר $z$ היא מדידת חיישן: $P(m)$ הוא ה<em>פריור</em>
+      (מה שהאמנו קודם), $P(z \mid m)$ הוא <em>מודל החיישן</em> (עד כמה
+      סביר שנקבל את הקריאה הזו אם התא באמת תפוס), ו-$P(m \mid z)$ הוא
+      ה<em>פוסטריור</em> — האמונה המעודכנת שאנחנו רוצים.
+    </p>
+    <p>
+      החלק המסובך הוא $P(z)$, המכנה. זו ההסתברות לראות את הקריאה הזו
+      ממוצעת על כל העולמות האפשריים, וזה קשה מאוד לחישוב. התרגיל העיקרי
+      של הסעיף הבא הוא לגרום לו להתבטל לגמרי.
+    </p>
+  </section>
+
+  <section class="topic" id="logodds-he">
+    <h2 class="topic-title">7. מבייס ל-log-odds</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      צריך לקפל הרבה קריאות לאורך זמן. נכתוב $z_{1:t}$ עבור כל המדידות עד
+      זמן $t$. הפעלת כלל בייס על החדשה ביותר:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ P(m \mid z_{1:t}) = \frac{P(z_t \mid m,\, z_{1:t-1})\; P(m \mid z_{1:t-1})}{P(z_t \mid z_{1:t-1})} $$
+    </div>
+    <p>
+      עכשיו עושים את <strong>הנחת מרקוב</strong>: בהינתן המצב האמיתי של
+      התא, קריאה חדשה לא תלויה בקריאות קודמות, ולכן
+      $P(z_t \mid m, z_{1:t-1}) = P(z_t \mid m)$. זו קירוב — שגיאות סונר
+      אמיתיות מתואמות — אבל זו ההנחה שהופכת את כל זה לניתן-לטיפול, והיא
+      עובדת היטב בפועל.
+    </p>
+    <p>
+      הלאה, החלפת משתנים. במקום לעקוב אחרי $P(m \mid z_{1:t})$ ישירות,
+      עוקבים אחרי <strong>היחס (odds)</strong>: היחס בין שתי ההשערות.
+      הנקודה היא שכשכותבים את אותה משוואה עבור $\lnot m$ ומחלקים, כל איבר
+      שלא מזכיר $m$ — כולל $P(z_t \mid z_{1:t-1})$ הבלתי-ניתן-לטיפול —
+      מופיע גם במונה וגם במכנה ומתבטל:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \frac{P(m \mid z_{1:t})}{P(\lnot m \mid z_{1:t})}
+      = \frac{P(z_t \mid m)}{P(z_t \mid \lnot m)} \cdot \frac{P(m \mid z_{1:t-1})}{P(\lnot m \mid z_{1:t-1})}
+      $$
+    </div>
+    <p>
+      האמונה החדשה היא האמונה הישנה כפול גורם שתורמת המדידה החדשה. זה כבר
+      ניצחון גדול. הניצחון השני הוא לקחת לוגריתם, שהופך את המכפלה הזו
+      לסכום. נגדיר את <strong>ה-log-odds</strong>:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \ell \;=\; \log\frac{p}{1-p} \qquad\Longleftrightarrow\qquad p \;=\; \frac{1}{1+e^{-\ell}} = \sigma(\ell) $$
+    </div>
+    <p>
+      (ההופכי הוא הפונקציה הלוגיסטית — פותרים $\ell = \log\frac{p}{1-p}$
+      עבור $p$ על ידי הפעלת אקספוננט וסידור מחדש.) לקיחת $\log$ של עדכון
+      היחס הופכת אותו לחיבור טהור:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \ell_t \;=\; \ell_{t-1} \;+\; \underbrace{\log\frac{P(z_t\mid m)}{P(z_t \mid \lnot m)}}_{\text{קבוע לכל סוג קריאה}} $$
+    </div>
+    <p>
+      זהו כלל העדכון כולו, וזו הסיבה שהלולאה הפנימית של הקוד היא
+      <code>+=</code> בודד. שלוש תכונות נובעות מהחלפת המשתנים, כולן
+      שימושיות:
+    </p>
+    <ul>
+      <li>
+        <strong>$\ell = 0$ פירושו בורות מוחלטת.</strong> $p = 0.5$ נותן
+        יחס $1$ ו-$\log 1 = 0$ — כך שרשת שהוקצתה זה עתה מלאה באפסים היא
+        בדיוק הפריור הנכון של "אני לא יודע כלום". לא נדרש קוד אתחול.
+      </li>
+      <li>
+        <strong>הסימן הוא התשובה.</strong> $\ell > 0$ פירושו שתפוס סביר
+        יותר, $\ell < 0$ פירושו שפנוי סביר יותר. סימטרי וקל לקבוע סף.
+      </li>
+      <li>
+        <strong>זה יציב נומרית.</strong> הסתברויות קרובות ל-$0$ או ל-$1$
+        מוכפלות לכיוון underflow; log-odds פשוט גדל לינארית ונשאר בטווח
+        נוח של נקודה צפה.
+      </li>
+    </ul>
+    <p>הקבועים שהקוד באמת משתמש בהם, ומה שהם אומרים כהסתברויות:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \ell_{\text{free}} = -0.85,\qquad \ell_{\text{occ}} = +0.85,
+      \qquad \sigma(0.85) \approx 0.70
+      $$
+      $$
+      \text{classify occupied if } \ell \ge 0.5\;(p \approx 0.62),
+      \qquad \text{free if } \ell \le -0.5
+      $$
+      $$
+      \text{clamp } \ell \in [-4,\, 4], \qquad \sigma(4) \approx 0.98
+      $$
+    </div>
+    <p>
+      כך שקריאה נקייה אחת מזיזה תא לביטחון של כ-$70\%$, שכבר חוצה את סף
+      הסיווג של $62\%$ — במכוון, מכיוון שלסונר המדומה אין רעש מוזרק,
+      אז אין רווח בדרישת אימות נוסף.
+    </p>
+    <div class="note">
+      <strong>למה לקצץ (clamp) ב-±4</strong>
+      <p>
+        בלי גבול, תא שנצפה מאה פעמים מגיע ל-$\ell = 85$, ויידרשו $170$
+        תצפיות סותרות כדי להחזיר אותו. העולם משתנה — כיסא זז — אז האמונה
+        חייבת להישאר ניתנת-לשינוי. הקיצוץ מגביל כמה ראיות תא יכול לצבור,
+        מה שמגביל כמה זמן לוקח לו לשנות את דעתו. זו סטייה מכוונת מהעדכון
+        הבייסיאני הטהור, המחליפה נכונות מוחלטת ביכולת הסתגלות.
+      </p>
+    </div>
+    <p>
+      לבסוף, <strong>הכיסוי (coverage)</strong>, המספר המוצג בלוח הבקרה,
+      הוא פשוט השבר של תאים שה-$\ell$ שלהם זז מספיק רחוק מאפס כדי להיות
+      מסווג בכל כיוון:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \text{coverage} = \frac{\big|\{\,c \;:\; |\ell_c| > 0.5\,\}\big|}{\text{total cells}} $$
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/mapping.py</p>
+      <pre><code class="language-python">L_FREE = -0.85
+L_OCCUPIED = 0.85
+L_MIN, L_MAX = -4.0, 4.0
+FREE_THRESHOLD, OCCUPIED_THRESHOLD = -0.5, 0.5
+
+def _apply(self, cx: int, cy: int, delta: float) -&gt; None:
+    if not self.in_bounds(cx, cy):
+        return
+    value = self.log_odds[cy][cx] + delta
+    self.log_odds[cy][cx] = max(L_MIN, min(L_MAX, value))
+
+def state_at(self, cx: int, cy: int) -&gt; int:
+    if not self.in_bounds(cx, cy):
+        return UNKNOWN
+    value = self.log_odds[cy][cx]
+    if value &gt;= OCCUPIED_THRESHOLD:
+        return OCCUPIED
+    if value &lt;= FREE_THRESHOLD:
+        return FREE
+    return UNKNOWN
+
+def coverage(self) -&gt; float:
+    """Fraction of cells that are no longer unknown."""
+    total = self.width * self.height
+    known = sum(
+        1 for row in range(self.height) for col in range(self.width)
+        if self.state_at(col, row) != UNKNOWN
+    )
+    return known / total</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="sensormodel-he">
+    <h2 class="topic-title">8. מודל החיישן והחרוט</h2>
+    <p class="source-ref">pi/scout/mapping.py</p>
+    <p>
+      סעיף 7 נותן את כלל העדכון אבל לא <em>לאילו</em> תאים להחיל אותו. זה
+      מודל החיישן. פינג אולטרסוני שמחזיר מרחק $r$ אומר לנו שני דברים
+      שונים:
+    </p>
+    <ul>
+      <li>כל מה שלאורך הקרן <em>קרוב יותר</em> מ-$r$ חייב להיות ריק, אחרת הפולס היה חוזר מוקדם יותר. התאים האלה מקבלים $\ell_{\text{free}}$.</li>
+      <li>משהו נמצא <em>ב</em>-מרחק של בערך $r$. התא הזה מקבל $\ell_{\text{occ}}$.</li>
+    </ul>
+    <p>
+      הקוד הולך לאורך הקרן בצעדים של חצי רוחב תא — מספיק קטן כדי שאף תא
+      לאורך המסלול לא יידלג, מכיוון שצעד גדול מגודל התא עלול לדלג נקי מעל
+      תא:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \mathbf{q}_i = \mathbf{p} + i\,\Delta\,(\cos\phi,\, \sin\phi), \qquad \Delta = \tfrac{1}{2}\,\text{cell size},\qquad i = 0 \ldots \lfloor r/\Delta \rfloor $$
+    </div>
+
+    <h3>למה "אין הד" זה לא "פנוי"</h3>
+    <p>
+      אם הפולס אף פעם לא חוזר, הקריאה המפתה היא "אין שום דבר בכל טווח
+      החיישן". זה שגוי, ומסוכן: פולס אולטרסוני שפוגע בקיר בזווית רדודה
+      מוחזר <em>הצידה</em> ולא חזרה, בדיוק כמו אור ממראה. שתיקה בדרך כלל
+      פירושה משטח בזווית, לא חלל ריק. הקוד לכן חוצב מרחב פנוי עד הטווח
+      המרבי אבל לא מסמן <em>כלום</em> כתפוס בקצה הרחוק — היעדר ראיה נרשם
+      כהיעדר ראיה.
+    </p>
+
+    <h3>למה חרוט ולא קרן</h3>
+    <p>
+      משדר אולטרסוני אמיתי פולט אלומה ברוחב של כ-$30°$, לא קו מתמטי. מידול
+      שלה כקרן בודדת גרם לבאג אמיתי, שנתפס בסימולציה: זוויות סריקה עוקבות
+      מרוחקות $30°$ זו מזו, כך שמודל קרן-בודדת משאיר טריזים דקים
+      בלתי-נצפים בין קריאות. קרוב לרובוט הטריזים האלה רחבים רק סנטימטרים
+      ספורים, ותא שתקוע באחד מהם נשאר $\ell = 0$ לנצח. מכיוון שהחקירה תמיד
+      נוסעת אל אזור הלא-ידוע <em>הקרוב ביותר</em>, הרובוט היה מכוון לטריז
+      ממש לצדו, מגיע, נכשל בפינויו, וחוזר על כך — livelock.
+    </p>
+    <p>
+      התיקון ממדל את רוחב האלומה בפועל. מרחב פנוי נחצב לאורך $n = 5$
+      תת-קרניים הפרושות על החרוט:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \phi_k = \phi_0 + \left(\frac{2k}{n-1} - 1\right)\alpha, \qquad k = 0,\ldots,n-1, \qquad \alpha = 15° $$
+    </div>
+    <p>
+      (בדקו את הקצוות: $k=0$ נותן $\phi_0 - \alpha$ ו-$k = n-1$ נותן
+      $\phi_0 + \alpha$, כך שתתי-הקרניים פרושות באופן אחיד על פני $\pm 15°$
+      המלאים.) רק נקודת הקצה של הקרן ה<em>מרכזית</em> מסומנת כתפוסה, עם
+      זאת — הפינג מוכיח שמשהו נמצא שם באותו טווח, אבל לא באיזו זווית
+      בתוך החרוט, כך שטענה שכל הקשת מוצקה הייתה ממציאה מכשולים שלא קיימים.
+      מרחב פנוי על פני החרוט הוא הטענה הבטוחה; תפוסה על פני החרוט לא.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/mapping.py — OccupancyGrid.update_ray (trimmed)</p>
+      <pre><code class="language-python">offsets = [
+    -cone_half_angle_deg + 2 * cone_half_angle_deg * i / (cone_rays - 1)
+    for i in range(cone_rays)
+]
+
+for offset in offsets:
+    radians = math.radians(bearing_deg + offset)
+    dx, dy = math.cos(radians), math.sin(radians)
+    for i in range(steps):
+        distance = i * step_mm
+        cx, cy = self.world_to_cell(x_mm + dx * distance, y_mm + dy * distance)
+        self._apply(cx, cy, L_FREE)
+
+if has_echo:
+    radians = math.radians(bearing_deg)
+    end_x = x_mm + math.cos(radians) * sweep_mm
+    end_y = y_mm + math.sin(radians) * sweep_mm
+    cx, cy = self.world_to_cell(end_x, end_y)
+    self._apply(cx, cy, L_OCCUPIED)</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="frontier-he">
+    <h2 class="topic-title">9. חקירת חזיתות כבעיית גרפים</h2>
+    <p class="source-ref">pi/scout/explore.py</p>
+    <p>
+      בהינתן מפה חלקית, לאן הרובוט צריך ללכת? התשובה הקלאסית היא
+      <strong>חקירה מבוססת-חזיתות</strong>. נגדיר תא חזית כתא ידוע-פנוי
+      הצמוד לפחות לתא לא-ידוע אחד:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ F = \big\{\, c \;:\; \text{state}(c) = \text{FREE} \;\wedge\; \exists\, n \in N_4(c)\ \text{state}(n) = \text{UNKNOWN} \,\big\} $$
+    </div>
+    <p>
+      כאשר $N_4$ היא שכנות-4 (למעלה, למטה, שמאלה, ימינה). הקבוצה הזו היא
+      בדיוק הגבול בין האזור הידוע ללא-ידוע — לעמוד על תא חזית ולהסתכל
+      החוצה מובטח לגלות משהו חדש. זה מה שהופך אותה למטרה הנכונה: זו
+      קבוצת המקומות שבהם רווח מידע ודאי, לא רק מקווה.
+    </p>
+    <p>
+      קישוריות-4 ולא 8 היא מכוונת. שכנות אלכסונית הייתה מאפשרת לשני תאים
+      משני צדי קיר בעובי-תא-אחד להיחשב שכנים, ולמזג חזיתות שלמעשה בלתי
+      נגישות זו מזו.
+    </p>
+
+    <h3>אשכול (clustering)</h3>
+    <p>
+      קיר ארוך הגובל בשטח לא-חקור מייצר עשרות תאי חזית בודדים. התייחסות
+      לכל אחד כמטרה נפרדת גורמת לרובוט להתנדנד בין תאים שכנים. אז מקבצים
+      אותם ל<strong>רכיבים קשירים</strong>: בונים גרף שקודקודיו הם תאי
+      חזית עם קשתות בין שכני-4, ואז מוצאים את הרכיבים הקשירים שלו בעזרת
+      חיפוש-לרוחב (BFS). כל תא נכנס ויוצא מהתור לכל היותר פעם אחת, מה
+      שנותן זמן $O(|F|)$.
+    </p>
+    <p>כל אשכול קורס למרכז המסה שלו — הממוצע האריתמטי של מיקומי-העולם של תאיו:</p>
+    <div class="eq-block" dir="ltr">
+      $$ \bar{\mathbf{x}} = \frac{1}{|C|}\sum_{c\, \in\, C} \mathbf{x}_c $$
+    </div>
+    <p>
+      אשכולות קטנים מסף (2 תאים) נזרקים כרעש חיישן ולא כפתחים אמיתיים.
+    </p>
+
+    <h3>בחירת מטרה</h3>
+    <p>הרובוט נוסע למרכז המסה הנותר הקרוב ביותר לפי מרחק בקו ישר:</p>
+    <div class="eq-block" dir="ltr">
+      $$ C^\star = \arg\min_{C} \;\big\lVert \bar{\mathbf{x}}_C - \mathbf{x}_{\text{robot}} \big\rVert_2 $$
+    </div>
+    <div class="note">
+      <strong>פישוט מכוון</strong>
+      <p>
+        מרחק בקו ישר מתעלם מקירות, כך שמרכז המסה הקרוב ביותר עשוי להיות
+        מאחורי אחד. אין כאן מתכנן מסלול — במקום זאת הרובוט נוסע צעד קצר,
+        סורק מחדש, ומתכנן מחדש. בחירה שגויה מתקנת את עצמה תוך שנייה-שתיים.
+        זה מחליף אופטימליות בכמות גדולה של מורכבות נמנעת, ועבור חלל בגודל
+        חדר זו העסקה הנכונה.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/explore.py</p>
+      <pre><code class="language-python">def find_frontier_cells(grid: OccupancyGrid) -&gt; set[tuple[int, int]]:
+    frontier = set()
+    for cy in range(grid.height):
+        for cx in range(grid.width):
+            if not grid.is_free(cx, cy):
+                continue
+            for dx, dy in _NEIGHBORS:  # 4-connected: up/down/left/right
+                nx, ny = cx + dx, cy + dy
+                if grid.in_bounds(nx, ny) and grid.is_unknown(nx, ny):
+                    frontier.add((cx, cy))
+                    break
+    return frontier
+
+def nearest_frontier(frontiers, x_mm, y_mm):
+    return min(
+        frontiers,
+        key=lambda f: math.hypot(f.centroid_x_mm - x_mm, f.centroid_y_mm - y_mm),
+    )</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================== חלק ג' ============================== -->
+  <div class="part-head">חלק ג' — ראייה</div>
+
+  <section class="topic" id="raysegment-he">
+    <h2 class="topic-title">10. חיתוך קרן/קטע</h2>
+    <p class="source-ref">pi/tools/sim_world.py</p>
+    <p>
+      הסימולטור צריך לענות: החל מ-$\mathbf{p}$ ונוסע בכיוון יחידה
+      $\mathbf{d}$, איפה אני פוגע לראשונה בקטע הקיר מ-$\mathbf{a}$ ל-
+      $\mathbf{b}$? נפרמט את שני האובייקטים:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \text{ray: } \mathbf{p} + t\,\mathbf{d},\; t \ge 0 \qquad\qquad \text{segment: } \mathbf{a} + u\,\mathbf{s},\; 0 \le u \le 1,\; \mathbf{s} = \mathbf{b}-\mathbf{a} $$
+    </div>
+    <p>השוואתם נותנת שתי משוואות סקלריות בשני נעלמים — מערכת לינארית:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      t\,\mathbf{d} - u\,\mathbf{s} = \mathbf{w}, \qquad \mathbf{w} = \mathbf{a} - \mathbf{p}
+      \qquad\Longleftrightarrow\qquad
+      \begin{pmatrix} d_x & -s_x \\ d_y & -s_y \end{pmatrix}
+      \begin{pmatrix} t \\ u \end{pmatrix} = \begin{pmatrix} w_x \\ w_y \end{pmatrix}
+      $$
+    </div>
+    <p>
+      נוח להציג את <strong>המכפלה הווקטורית הדו-ממדית</strong>, סקלר:
+      $\mathbf{u} \times \mathbf{v} = u_x v_y - u_y v_x$. זו הדטרמיננטה
+      $\det[\mathbf{u}\;\mathbf{v}]$, השווה לשטח המסומן של המקבילית
+      שהם פורשים, והיא מתאפסת בדיוק כששני הווקטורים מקבילים. הפעלת כלל
+      קרמר ופישוט:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      t = \frac{\mathbf{w} \times \mathbf{s}}{\mathbf{d} \times \mathbf{s}},
+      \qquad\qquad
+      u = \frac{\mathbf{w} \times \mathbf{d}}{\mathbf{d} \times \mathbf{s}}
+      $$
+    </div>
+    <p>פגיעה מדווחת רק אם שני האילוצים על הפרמטרים מתקיימים:</p>
+    <ul>
+      <li>$t \ge 0$ — הקיר לפני הקרן, לא מאחוריה. השמטת זה גורמת לחיישן לראות מבעד לעורף שלו.</li>
+      <li>$0 \le u \le 1$ — נקודת החיתוך נמצאת על הקטע עצמו, לא על ההרחבה האינסופית שלו מעבר לאחד הקצוות.</li>
+    </ul>
+    <p>
+      המכנה המשותף $\mathbf{d} \times \mathbf{s}$ הוא אפס בדיוק כשהקרן
+      והקיר מקבילים; הקוד בודק $|\mathbf{d} \times \mathbf{s}| < 10^{-9}$
+      ומדווח על אי-פגיעה, וזו גם התשובה הנכונה גאומטרית וגם ההגנה מפני
+      חלוקה באפס.
+    </p>
+    <div class="check">
+      <strong>למה $t$ הוא ישירות מרחק</strong>
+      <p>
+        מכיוון ש-$\mathbf{d}$ הוא וקטור יחידה, הנקודה בפרמטר $t$ נמצאת
+        בדיוק $t$ מילימטרים מהראשית לאורך הקרן — כך ש-$t$ לא צריך המרה.
+        אומת נומרית על אלפי זוגות קרן/קטע אקראיים: ה-$t$ המשוחזר תואם את
+        $\lVert \text{hit} - \mathbf{p}\rVert$ עד $10^{-13}$.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/tools/sim_world.py</p>
+      <pre><code class="language-python">def _ray_segment_distance(px, py, dx, dy, segment):
+    (ax, ay), (bx, by) = segment
+    sx, sy = bx - ax, by - ay
+
+    denom = dx * sy - dy * sx
+    if abs(denom) &lt; 1e-9:
+        return None  # parallel
+
+    t = ((ax - px) * sy - (ay - py) * sx) / denom
+    u = ((ax - px) * dy - (ay - py) * dx) / denom
+
+    if t &gt;= 0.0 and 0.0 &lt;= u &lt;= 1.0:
+        return t
+    return None</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="raybox-he">
+    <h2 class="topic-title">11. חיתוך קרן/תיבה (שיטת ה-slabs)</h2>
+    <p class="source-ref">pi/tools/sim_world.py</p>
+    <p>
+      רהיטים מיוצגים כתיבות מיושרות-צירים. תיבה מיושרת-צירים היא חיתוך של
+      שלושה <strong>slabs</strong> — האזור בין שני מישורים מקבילים, זוג
+      אחד לכל ציר:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \text{box} = \{\mathbf{x} : x \in [x_0,x_1]\} \cap \{\mathbf{x} : y \in [y_0,y_1]\} \cap \{\mathbf{x} : z \in [z_0,z_1]\} $$
+    </div>
+    <p>
+      התובנה: נקודה על הקרן נמצאת בתוך התיבה בדיוק כשהפרמטר $t$ שלה נמצא
+      בתוך <em>כל שלושת</em> הטווחים-לפי-ציר בו-זמנית. אז מחשבים את הטווח
+      של כל ציר וחותכים אותם. עבור ציר אחד:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ t_1 = \frac{lo - p}{d}, \qquad t_2 = \frac{hi - p}{d}, \qquad \text{swap if } t_1 > t_2 $$
+    </div>
+    <p>
+      ההחלפה חשובה כי $d$ שלילי הופך איזה מישור נכנסים אליו קודם. חיתוך
+      טווחים פירושו לקיחת הגבול התחתון הגדול ביותר והגבול העליון הקטן
+      ביותר:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ t_{\min} = \max_{\text{axes}} t_1^{(i)}, \qquad t_{\max} = \min_{\text{axes}} t_2^{(i)} $$
+    </div>
+    <p>אז:</p>
+    <ul>
+      <li>$t_{\min} > t_{\max}$ — הטווחים לא חופפים, אז הקרן מפספסת את התיבה לגמרי.</li>
+      <li>$t_{\max} < 0$ — התיבה כולה מאחורי ראשית הקרן.</li>
+      <li>$t_{\min} < 0 \le t_{\max}$ — הראשית נמצאת <em>בתוך</em> התיבה; החיתוך הראשון קדימה הוא נקודת היציאה $t_{\max}$.</li>
+      <li>אחרת התשובה היא $t_{\min}$, נקודת הכניסה.</li>
+    </ul>
+    <p>
+      מקרה קצה נוסף: $d = 0$ עבור ציר כלשהו פירושו שהקרן מקבילה לזוג
+      המישורים ההוא, והחלוקה הייתה מייצרת $\pm\infty$. הקוד בודק את זה
+      במפורש — אם הקואורדינטה של הראשית מחוץ ל-$[lo, hi]$ הקרן אף פעם לא
+      יכולה להיכנס, ואחרת הציר הזה לא מטיל שום אילוץ ומדולג.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/tools/sim_world.py</p>
+      <pre><code class="language-python">def _ray_box_distance(px, py, pz, dx, dy, dz, box):
+    t_min, t_max = -math.inf, math.inf
+    for p, d, lo, hi in (
+        (px, dx, box.x_min, box.x_max),
+        (py, dy, box.y_min, box.y_max),
+        (pz, dz, box.z_min, box.z_max),
+    ):
+        if abs(d) &lt; 1e-9:
+            if p &lt; lo or p &gt; hi:
+                return None  # parallel to this axis and outside its slab
+            continue
+        t1, t2 = (lo - p) / d, (hi - p) / d
+        if t1 &gt; t2:
+            t1, t2 = t2, t1
+        t_min = max(t_min, t1)
+        t_max = min(t_max, t2)
+        if t_min &gt; t_max:
+            return None
+
+    if t_max &lt; 0.0:
+        return None  # box is entirely behind the ray's origin
+    return t_min if t_min &gt;= 0.0 else t_max  # ray origin starts inside the box</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="pinhole-he">
+    <h2 class="topic-title">12. מודל מצלמת חור-הסיכה</h2>
+    <p class="source-ref">pi/scout/vision.py, pi/scout/depth_estimator.py</p>
+    <p>
+      מצלמה הופכת נקודות תלת-ממדיות לפיקסלים דו-ממדיים. האידיאליזציה
+      הסטנדרטית היא <strong>מצלמת חור-הסיכה</strong>: כל האור עובר דרך
+      נקודה בודדת, והתמונה נוצרת על מישור במרחק $f$ מאחוריה. עבודה עם
+      המישור הווירטואלי המקביל <em>לפני</em> חור הסיכה נמנעת מתמונה הפוכה.
+    </p>
+    <p>
+      נשתמש במערכת הצירים של המצלמה עצמה, שעוקבת אחר מוסכמת OpenCV ו<em>לא</em>
+      מוסכמת העולם מסעיף 1: $x_c$ מצביע ימינה, $y_c$ מצביע <em>מטה</em>,
+      ו-$z_c$ מצביע קדימה לאורך הציר האופטי.
+    </p>
+    <p>
+      עכשיו משולשים דומים. נקודה ב-$(x_c, y_c, z_c)$ וההטלה שלה על מישור
+      התמונה בעומק $f$ יוצרות משולשים החולקים את הקודקוד בחור הסיכה, כך
+      שהצלעות המתאימות ביחס:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \frac{x_{\text{img}}}{f} = \frac{x_c}{z_c} \qquad\Longrightarrow\qquad x_{\text{img}} = f\,\frac{x_c}{z_c} $$
+    </div>
+    <p>
+      שתי התאמות ממירות את זה לפיקסלים. ראשית, פיקסלים אולי לא מרובעים,
+      אז הסקאלות האופקית והאנכית שונות: $f_x$ ו-$f_y$ (ביחידות פיקסל).
+      שנית, קואורדינטות פיקסל נמדדות מהפינה השמאלית-עליונה של התמונה, לא
+      מהציר האופטי, אז מוסיפים את <strong>הנקודה הראשית</strong>
+      $(c_x, c_y)$ — היכן שהציר האופטי בפועל חודר את החיישן, בדרך כלל
+      קרוב אבל לא בדיוק במרכז התמונה:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ u = f_x\,\frac{x_c}{z_c} + c_x, \qquad\qquad v = f_y\,\frac{y_c}{z_c} + c_y $$
+    </div>
+    <p>
+      בעזרת רעיון הקואורדינטות ההומוגניות מסעיף 4, זה הופך למכפלת מטריצות.
+      ארבעת המספרים נאספים ל<strong>מטריצת הפרמטרים הפנימיים</strong> $K$:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \begin{pmatrix} u' \\ v' \\ w' \end{pmatrix}
+      = \underbrace{\begin{pmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{pmatrix}}_{K}
+      \begin{pmatrix} x_c \\ y_c \\ z_c \end{pmatrix},
+      \qquad (u, v) = \left(\frac{u'}{w'},\, \frac{v'}{w'}\right)
+      $$
+    </div>
+    <p>
+      החלוקה הסופית ב-$w' = z_c$ היא מה שהופך את ההטלה ללא-לינארית — ובדיוק
+      בגלל זה דברים רחוקים נראים קטנים יותר. ארבעת המספרים האלה משוחזרים
+      על ידי <strong>כיול (calibration)</strong>: מצלמים לוח שחמט בגאומטריה
+      ידועה מזוויות רבות ופותרים עבור ה-$K$ שמסביר הכי טוב איפה נחתו
+      הפינות שלו.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/vision.py, pi/scout/depth_estimator.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class CameraIntrinsics:
+    camera_matrix: np.ndarray  # 3x3 -- this is K
+    dist_coeffs: np.ndarray    # lens distortion, separate from K
+
+def _intrinsics_params(intrinsics):
+    return (
+        float(intrinsics.camera_matrix[0, 0]),  # fx
+        float(intrinsics.camera_matrix[1, 1]),  # fy
+        float(intrinsics.camera_matrix[0, 2]),  # cx
+        float(intrinsics.camera_matrix[1, 2]),  # cy
+    )</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="backproject-he">
+    <h2 class="topic-title">13. הטלה לאחור: מפיקסלים לנקודות תלת-ממדיות</h2>
+    <p class="source-ref">pi/scout/depth_estimator.py</p>
+    <p>
+      עכשיו נריץ את המצלמה אחורה. בהינתן פיקסל $(u, v)$, איזו נקודה
+      תלת-ממדית הפיקה אותו? פתרון משוואות ההטלה עבור $x_c$ ו-$y_c$:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ x_c = \frac{u - c_x}{f_x}\,z_c, \qquad\qquad y_c = \frac{v - c_y}{f_y}\,z_c $$
+    </div>
+    <p>
+      שימו לב ש-$z_c$ אף פעם לא נקבע — הוא מופיע כפרמטר חופשי. זו לא
+      כשלון אלגברי אלא הגאומטריה אומרת את האמת: פיקסל בודד מתאים ל<em>קרן</em>
+      שלמה של נקודות תלת-ממדיות, כולן מוטלות לאותו מקום. תצלום באמת לא
+      מכיל את מידע העומק. זו הבעיה הבסיסית של ראייה מונוקולרית (חד-עינית).
+    </p>
+    <p>
+      הפרויקט פותר את זה עם רשת נוירונים (MiDaS) שמנבאת עומק $d$ לכל
+      פיקסל — מסיקה מרמזים נלמדים כמו גרדיאנטים של מרקם והסתרה, בדומה
+      לאיך שאדם שופט מרחק בתצלום. הצבת $z_c = d$ קובעת את הנקודה:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \mathbf{p}_c = \left( \frac{u - c_x}{f_x}\,d,\;\; \frac{v - c_y}{f_y}\,d,\;\; d \right)
+      $$
+    </div>
+    <div class="note">
+      <strong>הסתייגות כנה לגבי סקאלה</strong>
+      <p>
+        MiDaS מנבא עומק הפוך <em>יחסי</em>, לא מטרים — הוא מדווח באופן
+        אמין ש-A קרוב יותר מ-B, אבל הסקאלה הכוללת שרירותית ומשתנה
+        לכל פריים. הקוד ממפה את הטווח החזוי של כל פריים לתוך מרווח
+        קרוב/רחוק מונח מראש, שהוא עקבי בתוך פריים אחד אבל לא ניתן להשוואה
+        בין פריימים. שחזור סקאלה מטרית אמיתית דורש מקור מידע שני — ציון
+        דרך בגודל ידוע, או קריאת האולטרסוני — וזה עדיין לא ממומש.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/depth_estimator.py — backproject_depth (trimmed)</p>
+      <pre><code class="language-python">for v in range(0, height, max(1, stride)):
+    for u in range(0, width, max(1, stride)):
+        d = float(depth_mm[v, u])
+        if not math.isfinite(d) or d &lt;= 0.0 or d &gt; max_range_mm:
+            continue
+
+        wx, wy, wz = rot.camera_ray_to_world(
+            (u - cx) / fx * d, (v - cy) / fy * d, d
+        )
+        points.append((
+            camera_pose.x_mm + wx,
+            camera_pose.y_mm + wy,
+            camera_pose.z_mm + wz,
+        ))</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="rot3d-he">
+    <h2 class="topic-title">14. סיבוב המצלמה אל תוך העולם</h2>
+    <p class="source-ref">pi/scout/depth_estimator.py</p>
+    <p>
+      הנקודה $\mathbf{p}_c$ נמצאת במערכת הצירים של המצלמה. כדי לצבור
+      נקודות מנקודות תצפית רבות למפה אחת, כל אחת צריכה להסתובב אל תוך
+      מערכת הצירים העולמית המשותפת ולהיזז למיקום העולמי של המצלמה.
+    </p>
+    <p>
+      למצלמה שתי זוויות: <strong>yaw</strong> $\psi$ (כיוון השילדה ועוד
+      זווית הצריח, סיבוב סביב $+z$ עולמי) ו-<strong>pitch</strong> $\phi$
+      (הטיה קבועה כלפי מטה של ההרכבה). אין roll — המצלמה מוברגת ברמה.
+      כמו בסעיף 2, מטריצת הסיבוב נבנית מהתמונות של שלושת וקטורי הבסיס של
+      המצלמה:
+    </p>
+    <ul>
+      <li>$z_c$ (קדימה) חייב להצביע לאורך כיוון הכיוונון: $(\cos\phi\cos\psi,\; \cos\phi\sin\psi,\; \sin\phi)$.</li>
+      <li>$x_c$ (ימינה) אופקי, ניצב לכיוונון: בזווית $\psi$ זה $(\sin\psi,\; -\cos\psi,\; 0)$. סימן המינוס הוא המרת הכיווניות — $+y$ העולמי הוא <em>שמאלה</em>, אז ימין המצלמה הוא $-y$ העולמי.</li>
+      <li>$y_c$ (מטה) משלים את המערכת: $(\sin\phi\cos\psi,\; \sin\phi\sin\psi,\; -\cos\phi)$.</li>
+    </ul>
+    <p>שלושת אלה כעמודות נותנים את סיבוב מצלמה-אל-עולם:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      R_{cw} =
+      \begin{pmatrix}
+      \sin\psi & \sin\phi\cos\psi & \cos\phi\cos\psi \\
+      -\cos\psi & \sin\phi\sin\psi & \cos\phi\sin\psi \\
+      0 & -\cos\phi & \sin\phi
+      \end{pmatrix}
+      $$
+    </div>
+    <p>כפל $R_{cw}\,\mathbf{p}_c$ וקיבוץ תת-הביטוי החוזר נותן בדיוק את הקוד:</p>
+    <div class="eq-block" dir="ltr">
+      $$
+      \begin{aligned}
+      a &= y_c \sin\phi + z_c \cos\phi &&\text{(הרכיב האופקי)}\\
+      w_x &= a\cos\psi + x_c \sin\psi \\
+      w_y &= a\sin\psi - x_c \cos\psi \\
+      w_z &= z_c \sin\phi - y_c \cos\phi
+      \end{aligned}
+      $$
+    </div>
+    <p>והנקודה במערכת העולמית היא הווקטור הזה מחובר למיקום העולמי של המצלמה עצמה:</p>
+    <div class="eq-block" dir="ltr">
+      $$ \mathbf{p}_{\text{world}} = \mathbf{c}_{\text{world}} + (w_x,\, w_y,\, w_z) $$
+    </div>
+    <div class="check">
+      <strong>שתי בדיקות שהמטריצה הזו נכונה</strong>
+      <p>
+        <em>זהו סיבוב אמיתי.</em> אומת נומרית על פני הטווח המלא של $\psi$
+        ו-$\phi$: העמודות אורתונורמליות עד כדי $3\times10^{-16}$
+        ו-$\det R_{cw} = 1$ באותה דיוק. דטרמיננטה של $-1$ הייתה מסמנת
+        ששיקוף התגנב — הסימפטום הקלאסי של מוסכמת כיווניות מבולבלת, ובדיוק
+        הבאג שהבדיקה הזו הייתה תופסת.
+      </p>
+      <p>
+        <em>זה מסכים עם הסימולטור.</em> הצבת $x_c = y_c = 0,\, z_c = d$
+        (פיקסל המרכז). אז $a = d\cos\phi$ והתוצאה קורסת ל-
+        $d\,(\cos\phi\cos\psi,\; \cos\phi\sin\psi,\; \sin\phi)$ — זהה
+        לכיוון הקרן שסורק העומק המדומה, שנכתב באופן בלתי-תלוי, משתמש בו.
+        שני קטעי קוד שנגזרו בנפרד ומסכימים הם ראיה משמעותית שאף אחד לא
+        המציא מוסכמה משלו.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/depth_estimator.py</p>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class _CameraRotation:
+    cy_: float; sy_: float; cp_: float; sp_: float
+
+    @classmethod
+    def from_pose(cls, camera_pose):
+        yaw_r = math.radians(camera_pose.yaw_deg)
+        pitch_r = math.radians(camera_pose.pitch_deg)
+        return cls(math.cos(yaw_r), math.sin(yaw_r),
+                    math.cos(pitch_r), math.sin(pitch_r))
+
+    def camera_ray_to_world(self, x_c, y_c, z_c):
+        a = y_c * self.sp_ + z_c * self.cp_
+        wx = a * self.cy_ + x_c * self.sy_
+        wy = a * self.sy_ - x_c * self.cy_
+        wz = z_c * self.sp_ - y_c * self.cp_
+        return wx, wy, wz</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="pnp-he">
+    <h2 class="topic-title">15. שחזור תנוחה מסמן (רודריגז ו-PnP)</h2>
+    <p class="source-ref">pi/scout/vision.py</p>
+    <p>
+      סעיף 5 הניח שאנחנו יכולים למדוד את $\text{marker}_{\text{camera}}$.
+      הנה איך. סמן ArUco הוא ריבוע באורך צלע פיזי ידוע $s$ הנושא תבנית
+      בינארית שמזהה אותו. זיהוי מחזיר את ארבע הפינות שלו בקואורדינטות
+      פיקסל, ואנחנו יודעים את מיקומיהן במערכת הצירים של הסמן עצמו:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \mathbf{P}_i \in \left\{ \left(\pm\tfrac{s}{2},\, \pm\tfrac{s}{2},\, 0\right) \right\} $$
+    </div>
+    <p>
+      זו בעיית <strong>Perspective-n-Point</strong>: בהינתן $n$ נקודות
+      תלת-ממדיות, ההטלות הדו-ממדיות שלהן, ו-$K$, למצוא את הסיבוב $R$
+      ואת ההזזה $\mathbf{t}$ שממקמות את האובייקט ביחס למצלמה. פורמלית
+      זו בעיית ריבועים-פחותים — למזער את <em>שגיאת ההטלה החוזרת</em>,
+      סך המרחק המרובע בפיקסלים בין המקום שבו נראו הפינות למקום שבו
+      התנוחה המועמדת מנבאת שהן ינחתו:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ (R^\star, \mathbf{t}^\star) = \arg\min_{R,\,\mathbf{t}} \sum_{i=1}^{n} \big\lVert \mathbf{u}_i - \pi\big(K(R\,\mathbf{P}_i + \mathbf{t})\big) \big\rVert^2 $$
+    </div>
+    <p>
+      כאשר $\pi$ היא החלוקה-ב-$z$ מסעיף 12. ארבע פינות קו-מישוריות מספיקות
+      כדי לקבוע את ששת הנעלמים. <code>solvePnP</code> של OpenCV פותר את
+      זה; הפרויקט משתמש בו במקום לממש מחדש.
+    </p>
+
+    <h3>נוסחת הסיבוב של רודריגז</h3>
+    <p>
+      <code>solvePnP</code> מחזיר סיבוב כווקטור-3 $\mathbf{r}$, לא מטריצה
+      — ייצוג <strong>ציר-זווית</strong>, שבו הכיוון
+      $\hat{\mathbf{r}} = \mathbf{r}/\lVert\mathbf{r}\rVert$ הוא הציר
+      והגודל $\varphi = \lVert\mathbf{r}\rVert$ הוא הזווית. שלושה מספרים
+      במקום תשעה, בלי אילוץ אורתונורמליות לשמר. המרה למטריצה משתמשת
+      בנוסחת רודריגז:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ R = I + \sin\varphi\,[\hat{\mathbf{r}}]_\times + (1-\cos\varphi)\,[\hat{\mathbf{r}}]_\times^2 $$
+    </div>
+    <p>
+      כאשר $[\hat{\mathbf{r}}]_\times$ היא המטריצה האנטי-סימטרית
+      המייצגת "מכפלה וקטורית עם $\hat{\mathbf{r}}$":
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$
+      [\hat{\mathbf{r}}]_\times = \begin{pmatrix} 0 & -r_3 & r_2 \\ r_3 & 0 & -r_1 \\ -r_2 & r_1 & 0 \end{pmatrix},
+      \qquad [\hat{\mathbf{r}}]_\times \mathbf{v} = \hat{\mathbf{r}} \times \mathbf{v}
+      $$
+    </div>
+    <p>
+      ההיגיון של הנוסחה: לפרק כל וקטור לחלק לאורך הציר (לא משתנה על ידי
+      הסיבוב) וחלק ניצב אליו (מסתובב בתוך מישור). שלושת האיברים הם
+      הווקטור המקורי, החלק הניצב מוכפל ב-$\sin\varphi$, ותיקון של
+      $(1-\cos\varphi)$ — סיבוב דו-ממדי המתבטא בבסיס הבנוי מהציר.
+    </p>
+
+    <h3>הטלה על הרצפה</h3>
+    <p>
+      התוצאה המלאה תלת-ממדית, אבל שרשרת הלוקליזציה בסעיף 5 דו-ממדית.
+      מכיוון שגם המצלמה וגם הסמנים מותקנים בערך ברמה, אפשר לרדת למישור
+      הרצפה באובדן קטן. קריאת הרכיבים — ובזכירה שמערכת הצירים של המצלמה
+      היא $x$ ימינה, $y$ מטה, $z$ קדימה:
+    </p>
+    <ul>
+      <li>המרחק הקדמי לסמן הוא $t_z$.</li>
+      <li>ההיסט הצדדי הוא $-t_x$ ($+x$ של המצלמה הוא ימינה; $+y$ העולמי הוא שמאלה).</li>
+      <li>זווית הפנייה של הסמן היא הנורמל היוצא שלו — הציר $+z$ שלו עצמו, שהוא <em>העמודה השלישית</em> של $R$ — מוטל על הרצפה:</li>
+    </ul>
+    <div class="eq-block" dir="ltr">
+      $$ \theta_{\text{marker}} = -\operatorname{atan2}\big(R_{13},\; R_{33}\big) $$
+    </div>
+    <p>
+      המינוס המוביל ממיר את מוסכמת עם-כיוון-השעון-חיובי של OpenCV
+      (כשמסתכלים מלמעלה) למוסכמה נגד-כיוון-השעון-חיובי של הפרויקט הזה.
+      <code>atan2</code> ולא <code>atan</code> כי הוא משתמש בסימנים של
+      שני הארגומנטים כדי לקבל את הרביע הנכון על פני $360°$ המלאים.
+    </p>
+    <div class="note">
+      <strong>כל סימן כאן אומת, לא הונח</strong>
+      <p>
+        שלוש מוסכמות סימנים מתנגשות בסעיף הזה, וטעות באחת מייצרת מפה
+        שנראית סבירה אבל מוראה. במקום לסמוך על תיעוד, הבדיקות מרנדרות
+        תמונה סינתטית של סמן בתנוחה ידועה, מריצות אותה דרך זיהוי אמיתי
+        ו-<code>solvePnP</code>, דוחפות את התוצאה דרך השרשרת של סעיף 5,
+        ובודקות את תנוחת השילדה המשוחזרת מול אמת-קרקע. השגיאה הנותרת
+        היא כ-30 מ"מ בטווח של 1.2 מ', שזה רעש רסטריזציה מוגבר על ידי
+        זרוע המנוף — מוגבל על ידי אופטיקה, לא על ידי טעות.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/scout/vision.py</p>
+      <pre><code class="language-python">def _rvec_tvec_to_pose2d(rvec, tvec) -&gt; Pose2D:
+    rotation, _ = cv2.Rodrigues(rvec)  # axis-angle -&gt; 3x3 matrix
+    tvec = tvec.ravel()
+    normal = rotation[:, 2]  # marker's own +z axis, in camera coords
+    heading_deg = -math.degrees(math.atan2(normal[0], normal[2]))
+    return Pose2D(x_mm=float(tvec[2]), y_mm=float(-tvec[0]), heading_deg=heading_deg)</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================== חלק ד' ============================== -->
+  <div class="part-head">חלק ד' — בניית משטח</div>
+
+  <section class="topic" id="isosurface-he">
+    <h2 class="topic-title">16. שדות סקלריים ומשטחי-איזו</h2>
+    <p class="source-ref">pi/web/scene.html, pi/tools/mesh_reconstruct.py</p>
+    <p>
+      חלקים א'-ג' מייצרים <strong>ענן נקודות</strong>: מיליוני נקודות
+      תלת-ממדיות מבודדות עם צבעים. אבל ענן נקודות הוא לא משטח — אין לו
+      פאות, אין פנים, אין מושג של "בפנים". להפוך אותו לרשת (mesh) שאפשר
+      לרנדר דורש ייצוג ביניים.
+    </p>
+    <p>
+      הסטנדרטי הוא <strong>משטח סתום (implicit surface)</strong>. במקום
+      לאחסן את המשטח, מגדירים שדה סקלרי $F : \mathbb{R}^3 \to \mathbb{R}$
+      ונותנים למשטח להיות קבוצת-רמה שלו:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ S = \big\{\, \mathbf{x} \in \mathbb{R}^3 \;:\; F(\mathbf{x}) = \tau \,\big\} $$
+    </div>
+    <p>
+      דוגמה מוכרת: $F(\mathbf{x}) = \lVert\mathbf{x}\rVert$ עם $\tau = r$
+      נותן כדור ברדיוס $r$. השדה מוגדר בכל מקום; המשטח הוא היכן שהוא
+      חוצה סף.
+    </p>
+    <p>
+      שתי עובדות מחשבון אינפיניטסימלי הופכות את הייצוג הזה לשימושי.
+      ראשית, הגרדיאנט $\nabla F$ ניצב לכל קבוצת-רמה, אז הוא נותן נורמלי
+      משטח בחינם — וזה מה שתאורה צריכה. שנית, הסימן של $F - \tau$ מסווג
+      בפנים מבחוץ, כך שבדיקות חיתוך והכלה הופכות להשוואות אריתמטיות.
+    </p>
+    <p>
+      התצוגה החיה בדפדפן בונה את $F$ על רשת וקסלים $64^3$ בעזרת חיפוש-
+      לרוחב (BFS) רב-מקורי: מזרעים כל וקסל המכיל נקודה סרוקה בערך $0$,
+      ונותנים לכל טבעת BFS יוצאת ערך גבוה יותר. מכיוון ש-BFS חוקר בסדר
+      עומק עולה, כל וקסל מגיע אליו לראשונה הזרע הקרוב ביותר שלו, אז
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ F(\mathbf{v}) \;\approx\; \Delta \cdot \min_{\text{seeds } s} \; \operatorname{dist}_{\text{grid}}(s, \mathbf{v}) $$
+    </div>
+    <p>
+      זה מקרב <em>שדה מרחק מסומן</em>. בכנות, זה קירוב גס: BFS על פני
+      שכנים בקישוריות-6 מודד מרחק מנהטן בצעדי-רשת, לא מרחק אוקלידי, כך
+      שקבוצות-הרמה מזוויתות מעט במקום עגולות לחלוטין. הוא נבחר כי הוא
+      עולה מעבר לינארי-בזמן אחד ויכול להיבנות מחדש כל שנייה בדפדפן בזמן
+      שהרובוט עדיין חוקר.
+    </p>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/web/scene.html — BFS רב-מקורי על רשת הוקסלים</p>
+      <pre><code class="language-javascript">const RING_VALUES = [0.0, 40.0]; // ring 0 = the point itself
+
+for (let ring = 0; ring &lt; RING_VALUES.length - 1 &amp;&amp; frontier.length &gt; 0; ring++) {
+  const nextFrontier = [];
+  for (const idx of frontier) {
+    // ...decode idx back to (x, y, z)...
+    for (const [dx, dy, dz] of NEIGHBOR_OFFSETS) {  // 6-connected
+      const nidx = size2 * nz + size * ny + nx;
+      if (ringOf[nidx] !== -1) continue;  // reached at a nearer ring already
+      ringOf[nidx] = ring + 1;
+      field[nidx] = RING_VALUES[ring + 1];
+      nextFrontier.push(nidx);
+    }
+  }
+  frontier = nextFrontier;
+}</code></pre>
+    </div>
+  </section>
+
+  <section class="topic" id="marching-he">
+    <h2 class="topic-title">17. Marching Cubes</h2>
+    <p class="source-ref">pi/web/scene.html</p>
+    <p>
+      בהינתן השדה, לחלץ את רשת המשולשים ב-$F = \tau$. אלגוריתם
+      <strong>Marching Cubes</strong> מעבד כל תא רשת — קובייה עם שמונה
+      פינות נדגמות — באופן בלתי-תלוי.
+    </p>
+    <p>
+      מסווגים כל פינה כבפנים ($F < \tau$) או בחוץ. שמונה פינות עם שני
+      מצבים כל אחת נותנות $2^8 = 256$ קונפיגורציות, מחושבות מראש בטבלת
+      חיפוש הממפה כל אחת למשולשים הנדרשים. התצפית המרכזית: המשטח חייב
+      לחצות קשת בדיוק כששני קצות הקשת ההיא מסווגים אחרת. לפי משפט הערך
+      הביניים, שדה רציף שלוקח ערכים משני צדי $\tau$ חייב להשתוות ל-$\tau$
+      איפשהו בין.
+    </p>
+    <p>
+      כדי למקם את החיתוך הזה במדויק, מניחים ש-$F$ משתנה לינארית לאורך
+      הקשת הקצרה ופותרים היכן הוא שווה ל-$\tau$:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \mu = \frac{\tau - F(\mathbf{P}_1)}{F(\mathbf{P}_2) - F(\mathbf{P}_1)}, \qquad \mathbf{X} = \mathbf{P}_1 + \mu\,(\mathbf{P}_2 - \mathbf{P}_1) $$
+    </div>
+    <p>
+      <em>האינטרפולציה הלינארית</em> הזו היא מה שהופך את הפלט לחלק ולא
+      גושי: בלעדיה, קודקודים היו ננעלים לאמצעי-קשתות והרשת הייתה נראית
+      כמו מיינקראפט. איתה, מיקומי קודקודים משתנים ברציפות כמו שהשדה
+      משתנה.
+    </p>
+    <p>
+      באופן קונקרטי, עם הערכים של הפרויקט הזה — שדה $0$ בוקסל מזורע, $40$
+      טבעת אחת החוצה, $200$ בחלל ריק, וסף $\tau = 80$ — קשת מוקסל
+      טבעת-1 לוקסל ריק ממקמת את הקודקוד שלה ב-
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \mu = \frac{80 - 40}{200 - 40} = 0.25 $$
+    </div>
+    <p>
+      רבע מהדרך החוצה, כך שהמשטח המשוחזר יושב ממש <em>מחוץ</em> לנקודות
+      הסרוקות ולא חותך דרכן. מכיוון שקוביות שכנות חולקות קשתות ולכן
+      מחשבות נקודות חיתוך זהות, המשולשים מתחברים בצורה חלקה לרשת סגורה
+      בלי סדקים — התכונה שהופכת את האלגוריתם לעובד בכלל.
+    </p>
+  </section>
+
+  <section class="topic" id="poisson-he">
+    <h2 class="topic-title">18. שחזור משטח בשיטת פואסון</h2>
+    <p class="source-ref">pi/tools/mesh_reconstruct.py</p>
+    <p>
+      מייצא הקבצים הלא-מקוון משתמש בשיטה עקרונית יותר לאיכות גבוהה יותר.
+      נתבונן ב<strong>פונקציית האינדיקטור</strong> $\chi$, השווה ל-$1$
+      בתוך האובייקט ו-$0$ מחוץ לו. הגרדיאנט שלה $\nabla\chi$ הוא אפס בכל
+      מקום חוץ מהמשטח, שם הוא קופץ בכיוון הנורמל של המשטח.
+    </p>
+    <p>
+      קריאת זה אחורה נותנת רעיון: אם אפשר להעריך את שדה הנורמלים
+      $\vec{N}$ מענן הנקודות (הנורמל של כל נקודה מהמישור המתאים ביותר
+      לשכניה), אז מחפשים פונקציה שהגרדיאנט שלה תואם לנורמלים האלה —
+      $\nabla\chi \approx \vec{N}$. המערכת הזו מוגדרת-יתר ואין לה פתרון
+      מדויק עבור נתונים רועשים, אז לוקחים דיברגנץ של שני הצדדים, מה
+      שהופך את זה למשוואה דיפרנציאלית חלקית מסדר-שני מוכרת:
+    </p>
+    <div class="eq-block" dir="ltr">
+      $$ \nabla \cdot \nabla \chi = \nabla \cdot \vec{N} \qquad\Longleftrightarrow\qquad \nabla^2 \chi = \nabla \cdot \vec{N} $$
+    </div>
+    <p>
+      זו <strong>משוואת פואסון</strong>, כאשר $\nabla^2 =
+      \frac{\partial^2}{\partial x^2} + \frac{\partial^2}{\partial y^2} +
+      \frac{\partial^2}{\partial z^2}$ הוא הלפלסיאן. דיסקרטיזציה על פני
+      עץ-אוקטרי אדפטיבי הופכת אותה למערכת לינארית דלילה גדולה, הנפתרת
+      נומרית; Marching Cubes אז מחלץ את הרשת מה-$\chi$ המתקבל. הפרויקט
+      קורא למימוש של Open3D במקום לכתוב אחד משלו.
+    </p>
+    <p>
+      התועלת מעבר לשדה ה-BFS היא שפואסון פותר גלובלית — כל נקודה משפיעה
+      על כל הפתרון — כך שהוא ממלא פערים קטנים בצורה חלקה ומדכא רעש, ונותן
+      משטחים חלקים אמיתיים במקום מזוויתים.
+    </p>
+    <div class="note">
+      <strong>איפה ההנחה נשברת</strong>
+      <p>
+        פואסון מניח משטח סגור, נדגם באופן אחיד. סריקת רובוט היא לא כזו:
+        יש בה חורים אמיתיים היכן שדבר מעולם לא נצפה. מכיוון שהשיטה
+        גלובלית וחלקה, היא בשמחה מבצעת אינטרפולציה של משטח בטוח-עצמו
+        ישר דרך החורים האלה — ממציאה גאומטריה. גיזום הקודקודים בעלי
+        הצפיפות הנמוכה ביותר מסיר את החלק הגרוע ביותר, אבל זו הסיבה
+        הכנה ששתי השיטות נשמרות: פואסון נראה טוב יותר היכן שיש נתונים,
+        בעוד שהחורים של שיטת הוקסלים לפחות כנים לגבי מה שמעולם לא נראה.
+      </p>
+    </div>
+    <button class="code-toggle" aria-expanded="false" data-show="&lt;/&gt; הצג את הקוד" data-hide="▾ הסתר את הקוד">&lt;/&gt; הצג את הקוד</button>
+    <div class="code-panel" hidden dir="ltr">
+      <p class="file-path">pi/tools/mesh_reconstruct.py</p>
+      <pre><code class="language-python">def reconstruct_mesh(pcd, depth=9, density_trim_quantile=0.05):
+    import open3d as o3d
+
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=60.0, max_nn=30)
+    )
+    pcd.orient_normals_consistent_tangent_plane(30)
+
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        pcd, depth=depth
+    )
+    # Trim low-density vertices -- Poisson extrapolates through real scan
+    # gaps rather than leaving a hole; this is the standard mitigation.
+    densities = np.asarray(densities)
+    threshold = np.quantile(densities, density_trim_quantile)
+    mesh.remove_vertices_by_mask(densities &lt; threshold)
+    return mesh</code></pre>
+    </div>
+  </section>
+
+  <section class="topic">
+    <h2 class="topic-title">לאן ממשיכים מכאן</h2>
+    <p>
+      ההמשכים הטבעיים, בסדר גס של קושי: <em>SLAM</em> אמיתי (לוקליזציה
+      ומיפוי בו-זמניים), שבו המפה והמסלול מותאמים יחד במקום לסמוך על
+      אודומטריה בין תצפיות בציוני דרך; <strong>מסנן קלמן</strong> או
+      <strong>מסנן חלקיקים</strong> למעקב אחר אי-ודאות התנוחה כהתפלגות
+      במקום כאומדן בודד; ושחזור סקאלה מטרית עבור העומק המונוקולרי, בשילוב
+      המרחקים המוחלטים של האולטרסוני עם אלה היחסיים של הרשת.
+    </p>
+    <p>
+      כל הקוד שנדון כאן נמצא ב-
+      <a href="https://github.com/akivamprager/nxt-rpi">GitHub</a>, ולכל
+      גזירה למעלה יש בדיקה (test) מתאימה שהייתה נכשלת אילו הגזירה הייתה
+      שגויה.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="index.html">→ חזרה לעמוד הראשי של Scout</a> · <a href="https://github.com/akivamprager/nxt-rpi">github.com/akivamprager/nxt-rpi</a></p>
+  </div>
+</footer>
+</div>
+<!-- ============================================================= /HEBREW ============================================================= -->
+
+<script>
+  const LANG_KEY = "scout_math_lang";
+  const enBlock = document.getElementById("content-en");
+  const heBlock = document.getElementById("content-he");
+  const btnEn = document.getElementById("langBtnEn");
+  const btnHe = document.getElementById("langBtnHe");
+
+  function applyLang(lang) {
+    const isHe = lang === "he";
+    enBlock.classList.toggle("hidden-lang", isHe);
+    heBlock.classList.toggle("hidden-lang", !isHe);
+    btnEn.classList.toggle("active", !isHe);
+    btnHe.classList.toggle("active", isHe);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isHe ? "rtl" : "ltr";
+    try { localStorage.setItem(LANG_KEY, lang); } catch (err) { /* private browsing — fine */ }
+  }
+
+  btnEn.addEventListener("click", () => applyLang("en"));
+  btnHe.addEventListener("click", () => applyLang("he"));
+
+  // Per-section "show the code" toggles — one listener via delegation
+  // rather than one per button, so it automatically covers both the
+  // English and Hebrew copies of every section without duplicating logic.
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest(".code-toggle");
+    if (!btn) return;
+    const panel = btn.nextElementSibling;
+    const show = panel.hasAttribute("hidden");
+    if (show) panel.removeAttribute("hidden"); else panel.setAttribute("hidden", "");
+    btn.setAttribute("aria-expanded", String(show));
+    btn.textContent = show ? btn.dataset.hide : btn.dataset.show;
+  });
+
+  // NOT applied at page load: both language blocks stay in normal flow
+  // (visible, un-hidden) until AFTER MathJax finishes typesetting the
+  // whole page — see the pageReady hook above, which calls this once
+  // typesetting is done. MathJax's CHTML renderer measures elements to
+  // lay out equations, and a display:none ancestor at typeset time
+  // reports zero-size layout boxes; hiding the Hebrew block up front,
+  // before typesetting, was tried and produced visibly broken equation
+  // spacing the first time that block was shown. Deferring the hide
+  // until after typesetting sidesteps the problem entirely.
+  function applyInitialLang() {
+    let initial = "en";
+    try { initial = localStorage.getItem(LANG_KEY) || "en"; } catch (err) { /* fall back to English */ }
+    applyLang(initial);
+  }
+  if (window.__mathReady) {
+    applyInitialLang();
+  } else {
+    window.__applyInitialLang = applyInitialLang;
+  }
+</script>
 
 </body>
 </html>
