@@ -225,9 +225,18 @@ def make_handler(
                             "--host", "127.0.0.1", "--port", str(port),
                             "--out", out_path,
                         ],
-                        capture_output=True, text=True, timeout=120,
+                        capture_output=True, text=True, timeout=240,
                     )
                 except subprocess.TimeoutExpired:
+                    # 240s, not the original 120s: that budget was set back
+                    # when this was only ever a manually-clicked, patient
+                    # action. Once scene.html started auto-triggering this
+                    # on every scan completion (no user judgment involved
+                    # in whether the cloud was "worth" the wait), a large
+                    # PointCloudMap (up to its own 200_000-point cap) at the
+                    # default Poisson depth started legitimately exceeding
+                    # 120s on ordinary hardware — confirmed via a real 504
+                    # hit during local testing, not a hypothetical.
                     _send_plain_error(self, 504, "mesh reconstruction timed out")
                     return
                 except OSError as exc:

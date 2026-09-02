@@ -32,16 +32,45 @@
   #sidebar {
     width: 320px; flex-shrink: 0; padding: 16px; overflow-y: auto;
     box-sizing: border-box; border-left: 1px solid #2a2e35;
+    /* Without an explicit background, the mobile @media block below turns
+       this into a position:fixed overlay with nothing behind its own text
+       but the 3D canvas underneath showing through — see index.html's
+       identical fix for the same bug, caught live on that page's log panel. */
+    background: #12151a;
   }
   #sidebarToggle { display: none; }
-  #nav { margin-bottom: 12px; }
+  #nav { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #nav a { color: #8a8f98; text-decoration: none; font-size: 12px; }
   #nav a.active { color: #9fd0ff; }
-  #nav span { color: #444; margin: 0 6px; }
+  #nav .sep { color: #444; margin: 0 6px; }
+  /* Shared by the sidebar's #langToggle AND #onboardingLangToggle — the
+     modal is z-index:50 and covers the whole viewport on first load, so
+     the sidebar's own toggle (underneath it) is unreachable until it's
+     dismissed. A first-time visitor who reads Hebrew needs a way to switch
+     before ever seeing the sidebar, hence a second copy of the same
+     buttons inside the modal itself, both wired to the same applyLang(). */
+  .lang-toggle { display: flex; gap: 4px; flex-shrink: 0; }
+  .lang-toggle button {
+    border: 1px solid #3a3f47; background: #1c2027; color: #8a8f98;
+    border-radius: 999px; padding: 2px 8px; font-size: 10.5px; cursor: pointer;
+    font-family: inherit;
+  }
+  .lang-toggle button.active { background: #2a3a4a; color: #9fd0ff; border-color: #4a5058; }
+  #onboardingLangToggle { justify-content: flex-end; margin-bottom: 10px; }
+  /* Only text-bearing containers (#sidebar, #note, #hint, #onboardingModal,
+     #povPanel — set via applyLang below) ever get dir="rtl"; the scene
+     canvas and its absolutely-positioned overlay buttons (zoom controls,
+     help/GitHub icons, POV panel position) never flip, since mirroring
+     those reliably would touch a much larger, harder-to-verify surface
+     than this dashboard's actual text content needs. */
+  [dir="rtl"] { text-align: right; }
+  [lang="he"] { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", Arial, sans-serif; }
   h1 { font-size: 15px; margin: 0 0 12px; letter-spacing: 0.02em; color: #9fd0ff; }
   .row { display: flex; justify-content: space-between; margin: 4px 0; }
   .label { color: #8a8f98; }
-  .value { font-variant-numeric: tabular-nums; }
+  /* direction:ltr + isolate so numeric readouts stay left-to-right and
+     don't get bidi-reordered in Hebrew mode — same pattern as index.html. */
+  .value { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
   #state {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
     background: #2a2e35; font-weight: 600;
@@ -178,78 +207,82 @@
 <body>
 <div id="layout">
   <div id="scenePane">
-    <div id="note">Room walls shown here are ground truth from the simulator — a real
+    <div id="note" data-i18n="note">Room walls shown here are ground truth from the simulator — a real
       robot has no such view. The coloured points/mesh are the honest part: an earned
       3D reconstruction built from repeated simulated depth-camera scans, the same way
       the 2D map is built from repeated ultrasonic readings.</div>
-    <div id="hint">drag to orbit · pinch/scroll to zoom · two-finger drag to pan</div>
-    <button id="sidebarToggle" title="Show info">&#9776;</button>
-    <button id="helpButton" title="What is this? / what do the buttons do?">?</button>
-    <a id="githubLink" href="https://akivamprager.github.io/nxt-rpi/" target="_blank" rel="noopener" title="Project documentation">
+    <div id="hint" data-i18n="hint">drag to orbit · pinch/scroll to zoom · two-finger drag to pan</div>
+    <button id="sidebarToggle" data-i18n-title="showInfo" title="Show info">&#9776;</button>
+    <button id="helpButton" data-i18n-title="helpButton" title="What is this? / what do the buttons do?">?</button>
+    <a id="githubLink" href="https://akivamprager.github.io/nxt-rpi/" target="_blank" rel="noopener" data-i18n-title="githubLink" title="Project documentation">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
     </a>
     <div id="zoomControls">
-      <button id="zoomIn" title="Zoom in">+</button>
-      <button id="zoomOut" title="Zoom out">&minus;</button>
-      <button id="meshToggle" title="Toggle point cloud / live mesh">&#9670;</button>
-      <button id="roomToggle" title="Toggle ground-truth room / earned reconstruction">&#8862;</button>
-      <button id="downloadMesh" title="Download an accurate mesh (.ply), built server-side from the full scan so far">&#8595;</button>
-      <button id="resetScan" title="Reset the scan and start exploring again">&#8635;</button>
+      <button id="zoomIn" data-i18n-title="zoomIn" title="Zoom in">+</button>
+      <button id="zoomOut" data-i18n-title="zoomOut" title="Zoom out">&minus;</button>
+      <button id="meshToggle" data-i18n-title="meshToggle" title="Toggle point cloud / live mesh">&#9670;</button>
+      <button id="roomToggle" data-i18n-title="roomToggle" title="Toggle ground-truth room / earned reconstruction">&#8862;</button>
+      <button id="downloadMesh" data-i18n-title="downloadMesh" title="Download an accurate mesh (.ply), built server-side from the full scan so far">&#8595;</button>
+      <button id="resetScan" data-i18n-title="resetScan" title="Reset the scan and start exploring again">&#8635;</button>
     </div>
     <div id="onboardingOverlay">
       <div id="onboardingModal">
-        <h2>Welcome to Scout's 3D demo</h2>
-        <p>This is a real robot exploration mission — the exact same Python code that will
+        <div id="onboardingLangToggle" class="lang-toggle"><button id="obLangBtnEn" type="button">EN</button><button id="obLangBtnHe" type="button">עב</button></div>
+        <h2 data-i18n="obTitle">Welcome to Scout's 3D demo</h2>
+        <p data-i18n="obIntro">This is a real robot exploration mission — the exact same Python code that will
           drive the physical robot is running right now, controlling a simulated NXT +
           Raspberry Pi in a simulated room. Nothing here is a mockup or a canned animation.</p>
         <ul>
-          <li><span class="key">drag</span> Orbit the 3D view. Pinch or scroll to zoom, two-finger drag to pan.</li>
-          <li><span class="key">+ &minus;</span> Zoom buttons — same as pinch/scroll, for when that's awkward.</li>
-          <li><span class="key">&#9670;</span> Switch between the point-cloud dots and a live triangulated
-            mesh, both rebuilt from the robot's own scans as it explores.</li>
-          <li><span class="key">&#8862;</span> Cycle what's shown: ground-truth room + reconstruction together,
-            the earned reconstruction alone, or the ground-truth room alone.</li>
-          <li><span class="key">&#8595;</span> Download an accurate mesh (.ply) built server-side from the
-            full scan — a higher-quality, slower reconstruction than the live one above.</li>
-          <li><span class="key">&#8635;</span> Reset the scan and start exploring again from scratch, any
+          <li><span class="key">drag</span> <span data-i18n="obDrag">Orbit the 3D view. Pinch or scroll to zoom, two-finger drag to pan.</span></li>
+          <li><span class="key">+ &minus;</span> <span data-i18n="obZoom">Zoom buttons — same as pinch/scroll, for when that's awkward.</span></li>
+          <li><span class="key">&#9670;</span> <span data-i18n="obMesh">Switch between the point-cloud dots and a live triangulated
+            mesh, both rebuilt from the robot's own scans as it explores.</span></li>
+          <li><span class="key">&#8862;</span> <span data-i18n="obRoom">Cycle what's shown: ground-truth room + reconstruction together,
+            the earned reconstruction alone, or the ground-truth room alone.</span></li>
+          <li><span class="key">&#8595;</span> <span data-i18n="obDownload">Download an accurate mesh (.ply) built server-side from the
+            full scan — a higher-quality, slower reconstruction than the live one above.</span></li>
+          <li><span class="key">&#8635;</span> <span data-i18n="obReset">Reset the scan and start exploring again from scratch, any
             time — note: on this public demo, a mission that finishes on its own also restarts
-            automatically after a short pause, which is why coverage can suddenly drop back down.</li>
-          <li><span class="key">POV</span> The small panel top-right shows exactly what the robot's own
-            camera sees right now — click "hide" to collapse it.</li>
-          <li><span class="key">&#9776;</span> On a phone, opens the stats panel (state, coverage, pose, etc).</li>
+            automatically after a short pause, which is why coverage can suddenly drop back down.</span></li>
+          <li><span class="key">POV</span> <span data-i18n="obPov">The small panel top-right shows exactly what the robot's own
+            camera sees right now — click "hide" to collapse it.</span></li>
+          <li><span class="key">&#9776;</span> <span data-i18n="obSidebar">On a phone, opens the stats panel (state, coverage, pose, etc).</span></li>
         </ul>
-        <p class="note">The ground-truth room/walls are shown for a visually complete demo — a
+        <p class="note" data-i18n="obNote">The ground-truth room/walls are shown for a visually complete demo — a
           real robot has no such oracle. Everything colored (points, mesh) is <em>earned</em>:
           built only from what the robot's simulated depth camera actually scanned, the same
           honesty the 2D occupancy map already has.</p>
-        <button id="onboardingClose">Got it</button>
+        <button id="onboardingClose" data-i18n="obClose">Got it</button>
       </div>
     </div>
     <div id="povPanel">
       <div id="povHeader">
-        <span>ROBOT POV</span>
-        <button id="povToggle" title="Hide/show">hide</button>
+        <span data-i18n="povTitle">ROBOT POV</span>
+        <button id="povToggle" data-i18n-title="hideShow" title="Hide/show">hide</button>
       </div>
       <canvas id="povCanvas"></canvas>
       <div id="povReadout">
-        ultrasonic <span id="povRange">—</span> · colour <span id="povColor">—</span>
+        <span data-i18n="povUltrasonic">ultrasonic</span> <span id="povRange">—</span> · <span data-i18n="povColour">colour</span> <span id="povColor">—</span>
       </div>
     </div>
   </div>
   <div id="sidebar">
-    <div id="nav"><a href="/index.html">2D map</a><span>·</span><a class="active" href="/scene.html">3D scene</a></div>
-    <h1>SCOUT — 3D SCENE</h1>
-    <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
-    <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
-    <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
-    <div class="row"><span class="label">cloud pts</span><span id="cloudPoints" class="value">—</span></div>
-    <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
-    <div class="row"><span class="label">turret</span><span id="turret" class="value">—</span></div>
-    <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
+    <div id="nav">
+      <span><a href="/index.html" data-i18n="nav2d">2D map</a><span class="sep">·</span><a class="active" href="/scene.html" data-i18n="nav3d">3D scene</a></span>
+      <span id="langToggle" class="lang-toggle"><button id="langBtnEn" type="button">EN</button><button id="langBtnHe" type="button">עב</button></span>
+    </div>
+    <h1 data-i18n="title">SCOUT — 3D SCENE</h1>
+    <div class="row"><span class="label" data-i18n="state">state</span><span id="state" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="coverage">coverage</span><span id="coverage" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="frontiers">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="cloudPts">cloud pts</span><span id="cloudPoints" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="pose">pose</span><span id="pose" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="turret">turret</span><span id="turret" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="battery">battery</span><span id="battery" class="value">—</span></div>
     <hr>
-    <div class="row"><span class="label">frames rx</span><span id="frames" class="value">—</span></div>
-    <div class="row"><span class="label">checksum errs</span><span id="checksum" class="value">—</span></div>
-    <div id="offline">no response from the dashboard server</div>
+    <div class="row"><span class="label" data-i18n="framesRx">frames rx</span><span id="frames" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="checksumErrs">checksum errs</span><span id="checksum" class="value">—</span></div>
+    <div id="offline" data-i18n="offline">no response from the dashboard server</div>
   </div>
 </div>
 
@@ -427,7 +460,9 @@ povRenderer.setPixelRatio(window.devicePixelRatio);
 const povPanel = document.getElementById("povPanel");
 document.getElementById("povToggle").addEventListener("click", () => {
   const collapsed = povPanel.classList.toggle("collapsed");
-  document.getElementById("povToggle").textContent = collapsed ? "show" : "hide";
+  document.getElementById("povToggle").textContent = collapsed
+    ? I18N[lang].show
+    : I18N[lang].hide;
 });
 
 function resizePov() {
@@ -562,16 +597,160 @@ roomToggleButton.title = ROOM_TOGGLE_TITLES[roomVisibilityMode]; // initial labe
 // to run mesh_reconstruct.py's real Open3D/Poisson pipeline against the
 // full scan and streams back a .ply — see server.py's
 // POST /reconstruct_mesh and its mesh_reconstruct_python setup
-// requirement. Can take up to ~2 minutes on a large scan (Poisson
-// reconstruction isn't instant), hence the button's own loading state
-// below rather than leaving the user guessing whether the click registered.
+// requirement. Can take up to a few minutes on a large scan (Poisson
+// reconstruction isn't instant, and server.py's own subprocess timeout is
+// 240s — confirmed via a real 120s timeout hit in testing before that was
+// raised), hence the button's own loading state below rather than leaving
+// the user guessing whether the click registered.
+// Static UI text only — mission log lines and this page's title/coordinate
+// numbers aren't translated (there's no log panel on this page, but see
+// index.html's I18N comment for the same reasoning re: server-generated
+// text). Shares its localStorage key with index.html so a language choice
+// made on either dashboard page carries over to the other.
+const I18N = {
+  en: {
+    nav2d: "2D map", nav3d: "3D scene",
+    title: "SCOUT — 3D SCENE",
+    state: "state", coverage: "coverage", frontiers: "frontiers",
+    cloudPts: "cloud pts", pose: "pose", turret: "turret", battery: "battery",
+    framesRx: "frames rx", checksumErrs: "checksum errs",
+    offline: "no response from the dashboard server",
+    showInfo: "Show info",
+    helpButton: "What is this? / what do the buttons do?",
+    githubLink: "Project documentation",
+    zoomIn: "Zoom in", zoomOut: "Zoom out",
+    meshToggle: "Toggle point cloud / live mesh",
+    roomToggle: "Toggle ground-truth room / earned reconstruction",
+    downloadMesh: "Download an accurate mesh (.ply), built server-side from the full scan so far",
+    resetScan: "Reset the scan and start exploring again",
+    note: "Room walls shown here are ground truth from the simulator — a real robot has no such view. The coloured points/mesh are the honest part: an earned 3D reconstruction built from repeated simulated depth-camera scans, the same way the 2D map is built from repeated ultrasonic readings.",
+    hint: "drag to orbit · pinch/scroll to zoom · two-finger drag to pan",
+    obTitle: "Welcome to Scout's 3D demo",
+    obIntro: "This is a real robot exploration mission — the exact same Python code that will drive the physical robot is running right now, controlling a simulated NXT + Raspberry Pi in a simulated room. Nothing here is a mockup or a canned animation.",
+    obDrag: "Orbit the 3D view. Pinch or scroll to zoom, two-finger drag to pan.",
+    obZoom: "Zoom buttons — same as pinch/scroll, for when that's awkward.",
+    obMesh: "Switch between the point-cloud dots and a live triangulated mesh, both rebuilt from the robot's own scans as it explores.",
+    obRoom: "Cycle what's shown: ground-truth room + reconstruction together, the earned reconstruction alone, or the ground-truth room alone.",
+    obDownload: "Download an accurate mesh (.ply) built server-side from the full scan — a higher-quality, slower reconstruction than the live one above.",
+    obReset: "Reset the scan and start exploring again from scratch, any time — note: on this public demo, a mission that finishes on its own also restarts automatically after a short pause, which is why coverage can suddenly drop back down.",
+    obPov: "The small panel top-right shows exactly what the robot's own camera sees right now — click \"hide\" to collapse it.",
+    obSidebar: "On a phone, opens the stats panel (state, coverage, pose, etc).",
+    obNote: "The ground-truth room/walls are shown for a visually complete demo — a real robot has no such oracle. Everything colored (points, mesh) is <em>earned</em>: built only from what the robot's simulated depth camera actually scanned, the same honesty the 2D occupancy map already has.",
+    obClose: "Got it",
+    povTitle: "ROBOT POV", hide: "hide", show: "show", hideShow: "Hide/show",
+    povUltrasonic: "ultrasonic", povColour: "colour",
+    meshGenerating: "Generating the mesh server-side — this can take a few minutes on a large scan...",
+    meshUnavailable: "Not available on this server (MESH_RECONSTRUCT_PYTHON isn't configured)",
+    resetUnavailable: "Not available on this server",
+    meshDownloadFailed: "Mesh download failed: ",
+    resetFailed: "Reset failed: ",
+    notifyTitle: "Scout: scan complete",
+    notifyBody: "Exploration finished — downloading the full mesh now.",
+  },
+  he: {
+    nav2d: "מפה דו-ממדית", nav3d: "תצוגה תלת-ממדית",
+    title: "סקאוט — תצוגה תלת-ממדית",
+    state: "מצב", coverage: "כיסוי", frontiers: "חזיתות",
+    cloudPts: "נקודות ענן", pose: "תנוחה", turret: "צריח", battery: "סוללה",
+    framesRx: "פריימים", checksumErrs: "שגיאות checksum",
+    offline: "אין תגובה משרת לוח הבקרה",
+    showInfo: "הצג מידע",
+    helpButton: "מה זה? / מה עושים הכפתורים?",
+    githubLink: "תיעוד הפרויקט",
+    zoomIn: "התקרבות", zoomOut: "התרחקות",
+    meshToggle: "החלפה בין ענן נקודות למשטח חי",
+    roomToggle: "החלפה בין החדר האמיתי לשחזור הנצבר",
+    downloadMesh: "הורדת משטח מדויק (.ply), הנבנה בצד השרת מהסריקה המלאה עד כה",
+    resetScan: "איפוס הסריקה והתחלת חקירה מחדש",
+    note: "קירות החדר המוצגים כאן הם אמת-מידה מהסימולטור — לרובוט אמיתי אין תצוגה כזו. הנקודות/המשטח הצבעוניים הם החלק האמיתי: שחזור תלת-ממדי שנצבר מסריקות חוזרות של מצלמת עומק מדומה, באותו אופן שבו המפה הדו-ממדית נבנית מקריאות אולטרסוניות חוזרות.",
+    hint: "גררו לסיבוב · צבטו/גללו להתמקדות · גררו בשתי אצבעות להזזה",
+    obTitle: "ברוכים הבאים להדגמה התלת-ממדית של סקאוט",
+    obIntro: "זוהי משימת חקירה אמיתית של רובוט — אותו קוד פייתון בדיוק שיפעיל את הרובוט הפיזי רץ כרגע, ומפעיל NXT + Raspberry Pi מדומים בחדר מדומה. שום דבר כאן אינו דמו מלאכותי או הנפשה מוקלטת מראש.",
+    obDrag: "סיבוב התצוגה התלת-ממדית. צביטה או גלילה להתמקדות, גרירה בשתי אצבעות להזזה.",
+    obZoom: "כפתורי התמקדות — זהה לצביטה/גלילה, לשימוש כשזה לא נוח.",
+    obMesh: "החלפה בין נקודות ענן הנקודות למשטח משולש חי, שניהם נבנים מחדש מהסריקות של הרובוט תוך כדי החקירה.",
+    obRoom: "מחזור בין מה שמוצג: החדר האמיתי + השחזור יחד, השחזור הנצבר לבדו, או החדר האמיתי לבדו.",
+    obDownload: "הורדת משטח מדויק (.ply) הנבנה בצד השרת מהסריקה המלאה — שחזור איכותי ואיטי יותר מהתצוגה החיה שלמעלה.",
+    obReset: "איפוס הסריקה והתחלת חקירה מחדש מאפס, בכל עת — לתשומת לב: בהדגמה הציבורית הזו, משימה שמסתיימת מעצמה גם מתחילה מחדש אוטומטית לאחר הפסקה קצרה, ולכן הכיסוי עשוי לצנוח לפתע.",
+    obPov: "הפאנל הקטן בפינה הימנית-עליונה מציג בדיוק את מה שהמצלמה של הרובוט רואה כרגע — לחצו על \"הסתר\" כדי לצמצם אותו.",
+    obSidebar: "בטלפון, פותח את פאנל הנתונים (מצב, כיסוי, תנוחה וכו').",
+    obNote: "קירות/חדר האמת מוצגים לצורך הדגמה ויזואלית שלמה — לרובוט אמיתי אין ידע כזה מראש. כל מה שצבעוני (נקודות, משטח) הוא <em>נצבר</em>: נבנה רק ממה שמצלמת העומק המדומה של הרובוט סרקה בפועל, אותה יושרה שכבר יש למפת התפוסה הדו-ממדית.",
+    obClose: "הבנתי",
+    povTitle: "מבט הרובוט", hide: "הסתר", show: "הצג", hideShow: "הסתר/הצג",
+    povUltrasonic: "אולטרסוני", povColour: "צבע",
+    meshGenerating: "בונה את המשטח בצד השרת — בסריקה גדולה זה יכול לקחת כמה דקות...",
+    meshUnavailable: "לא זמין בשרת הזה (MESH_RECONSTRUCT_PYTHON אינו מוגדר)",
+    resetUnavailable: "לא זמין בשרת הזה",
+    meshDownloadFailed: "הורדת המשטח נכשלה: ",
+    resetFailed: "האיפוס נכשל: ",
+    notifyTitle: "סקאוט: הסריקה הושלמה",
+    notifyBody: "החקירה הסתיימה — מוריד כעת את המשטח המלא.",
+  },
+};
+const STATE_LABELS = {
+  en: { IDLE: "IDLE", SWEEPING: "SWEEPING", PLANNING: "PLANNING", DRIVING: "DRIVING", RECOVERING: "RECOVERING", DONE: "DONE" },
+  he: { IDLE: "ממתין", SWEEPING: "סורק", PLANNING: "מתכנן", DRIVING: "נוסע", RECOVERING: "מתאושש", DONE: "הושלם" },
+};
+
+let lang = localStorage.getItem("scout_dashboard_lang") || "en";
+
+function applyLang() {
+  const t = I18N[lang];
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.innerHTML = t[el.dataset.i18n]; // innerHTML: obNote embeds an <em>
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t[el.dataset.i18nTitle];
+  });
+  // downloadMeshButton's title cycles through several dynamic states (see
+  // downloadMesh() and the capabilities check below) — only reset it to
+  // the default here if it isn't mid-flight or already marked unavailable,
+  // so toggling language doesn't stomp on those.
+  if (!downloadMeshButton.disabled) downloadMeshButton.title = t.downloadMesh;
+  if (!resetScanButton.disabled) resetScanButton.title = t.resetScan;
+  document.getElementById("povToggle").textContent = povPanel.classList.contains("collapsed") ? t.show : t.hide;
+  // Scoped to specific text-bearing containers, not <html>/<body> — see the
+  // CSS comment on [dir="rtl"] above for why the canvas/overlay layout
+  // itself is deliberately left alone.
+  for (const id of ["sidebar", "note", "hint", "onboardingModal", "povPanel"]) {
+    document.getElementById(id).dir = lang === "he" ? "rtl" : "ltr";
+  }
+  for (const id of ["langBtnEn", "obLangBtnEn"]) {
+    document.getElementById(id).classList.toggle("active", lang === "en");
+  }
+  for (const id of ["langBtnHe", "obLangBtnHe"]) {
+    document.getElementById(id).classList.toggle("active", lang === "he");
+  }
+}
+function setLang(l) {
+  lang = l;
+  localStorage.setItem("scout_dashboard_lang", lang);
+  applyLang();
+}
+// Two button pairs, same handler: the sidebar's (unreachable while the
+// onboarding modal covers the page on first load) and the modal's own copy
+// (see #onboardingLangToggle's CSS comment above).
+for (const id of ["langBtnEn", "obLangBtnEn"]) {
+  document.getElementById(id).addEventListener("click", () => setLang("en"));
+}
+for (const id of ["langBtnHe", "obLangBtnHe"]) {
+  document.getElementById(id).addEventListener("click", () => setLang("he"));
+}
+// The initial call is deferred to just after downloadMeshButton/
+// resetScanButton are declared below — applyLang() reads their .disabled
+// state, and calling it up here (before those `const`s exist) would throw
+// a temporal-dead-zone ReferenceError and abort the whole module script.
+
 const downloadMeshButton = document.getElementById("downloadMesh");
-const DOWNLOAD_MESH_DEFAULT_TITLE = downloadMeshButton.title;
-downloadMeshButton.addEventListener("click", async () => {
-  if (downloadMeshButton.disabled) return; // already in flight
+
+// Pulled out of the click handler so the auto-download-on-scan-complete
+// logic near poll() below can trigger the exact same flow (including the
+// button's own loading state and error handling) without duplicating it.
+async function downloadMesh() {
+  if (downloadMeshButton.disabled) return; // already in flight, or unavailable
   downloadMeshButton.disabled = true;
   downloadMeshButton.textContent = "…"; // ellipsis: working
-  downloadMeshButton.title = "Generating the mesh server-side — this can take a minute or two...";
+  downloadMeshButton.title = I18N[lang].meshGenerating;
   try {
     const res = await fetch("/reconstruct_mesh", { method: "POST" });
     if (!res.ok) {
@@ -592,13 +771,14 @@ downloadMeshButton.addEventListener("click", async () => {
     // isn't configured on this server (see the 503 case) — surfaced via
     // alert() rather than silently failing, since there's no toast/status
     // UI elsewhere on this page to route it through instead.
-    alert(`Mesh download failed: ${err.message}`);
+    alert(`${I18N[lang].meshDownloadFailed}${err.message}`);
   } finally {
     downloadMeshButton.disabled = false;
     downloadMeshButton.textContent = "↓";
-    downloadMeshButton.title = DOWNLOAD_MESH_DEFAULT_TITLE;
+    downloadMeshButton.title = I18N[lang].downloadMesh;
   }
-});
+}
+downloadMeshButton.addEventListener("click", downloadMesh);
 
 // "Reset scan" — POST /reset_mission asks demo_explore.py's main loop
 // (which owns the actual mission lifecycle) to restart right now: fresh
@@ -621,11 +801,15 @@ resetScanButton.addEventListener("click", async () => {
     // no page reload needed, same as how SCOUT_LOOP's automatic restart
     // already shows up live without one.
   } catch (err) {
-    alert(`Reset failed: ${err.message}`);
+    alert(`${I18N[lang].resetFailed}${err.message}`);
   } finally {
     resetScanButton.disabled = false;
   }
 });
+
+// Now that both buttons exist, apply the persisted (or default) language
+// to every data-i18n element and both their titles for the first time.
+applyLang();
 
 // Grey out buttons the server has already told us (via /capabilities.json)
 // will just fail — better than letting someone click first and find out.
@@ -634,18 +818,35 @@ resetScanButton.addEventListener("click", async () => {
 // UX improvement, checked once at load since these capabilities are fixed
 // for the lifetime of the server process, not something that changes
 // moment to moment.
+//
+// `capabilities` is also poll()'s signal for "running locally": Open3D's
+// heavy native dependency means mesh_reconstruct_available is only ever
+// true when MESH_RECONSTRUCT_PYTHON is configured (auto-detected from a
+// local .venv-mesh — see demo_explore.py's _default_mesh_python), which
+// never happens on the public Render deployment's checkout. So gating the
+// auto-notify-and-download-on-scan-complete behaviour below on this same
+// flag is exactly "only when running locally," with no separate
+// hostname-sniffing needed — and it also means a visitor to the public
+// demo never gets an unexpected multi-megabyte auto-download.
+let capabilities = {};
 (async () => {
   try {
     const res = await fetch("/capabilities.json", { cache: "no-store" });
     if (!res.ok) return;
-    const caps = await res.json();
-    if (!caps.mesh_reconstruct_available) {
+    capabilities = await res.json();
+    if (!capabilities.mesh_reconstruct_available) {
       downloadMeshButton.disabled = true;
-      downloadMeshButton.title = "Not available on this server (MESH_RECONSTRUCT_PYTHON isn't configured)";
+      downloadMeshButton.title = I18N[lang].meshUnavailable;
+    } else if ("Notification" in window && Notification.permission === "default") {
+      // Ask once, up front, rather than at the moment a scan finishes —
+      // Chrome is more likely to honour a permission prompt that isn't
+      // sprung on the user mid-task, and this only fires locally anyway
+      // (see the flag check above).
+      Notification.requestPermission();
     }
-    if (!caps.reset_available) {
+    if (!capabilities.reset_available) {
       resetScanButton.disabled = true;
-      resetScanButton.title = "Not available on this server";
+      resetScanButton.title = I18N[lang].resetUnavailable;
     }
   } catch (err) {
     // No /capabilities.json (e.g. an older server) — leave both buttons
@@ -1334,14 +1535,33 @@ function fmtPose(pose) {
   return `(${pose.x_mm.toFixed(0)}, ${pose.y_mm.toFixed(0)}) mm  ${pose.heading_deg.toFixed(0)}°`;
 }
 
+// Tracks the previous poll's mission state so the DONE-transition check
+// below fires exactly once per scan completion, not on every 300ms poll
+// while it happens to still read DONE (and not on page load if a scan is
+// already sitting in DONE from before this page opened).
+let previousMissionState = null;
+
 async function poll() {
   try {
     const res = await fetch("/state.json", { cache: "no-store" });
     const state = await res.json();
     document.getElementById("offline").style.display = "none";
 
-    document.getElementById("state").textContent = state.state;
+    document.getElementById("state").textContent = STATE_LABELS[lang][state.state] || state.state;
     document.getElementById("state").className = state.state;
+
+    if (
+      state.state === "DONE" &&
+      previousMissionState !== null &&
+      previousMissionState !== "DONE" &&
+      capabilities.mesh_reconstruct_available
+    ) {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(I18N[lang].notifyTitle, { body: I18N[lang].notifyBody });
+      }
+      downloadMesh();
+    }
+    previousMissionState = state.state;
     document.getElementById("coverage").textContent = (state.coverage * 100).toFixed(1) + "%";
     document.getElementById("frontiers").textContent = state.frontier_count;
     document.getElementById("pose").textContent = fmtPose(state.pose);

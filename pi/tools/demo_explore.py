@@ -41,10 +41,14 @@ behavior above):
                   .venv-mesh/bin/python3 — see mesh_reconstruct.py's
                   docstring for why that's usually a separate Python from
                   this one). Powers scene.html's "download the accurate
-                  mesh" button. Unset by default: that button then 503s
-                  with a clear message rather than failing silently — a
-                  public deployment (e.g. Render) won't have this
-                  configured unless specifically set up for it.
+                  mesh" button. If unset, falls back to `.venv-mesh/bin/
+                  python3` next to the repo root when that exists (see
+                  _default_mesh_python below) — so a local checkout that
+                  already has the mesh venv set up gets a working download
+                  button with no extra env var, while still 503ing with a
+                  clear message if neither is present. A public deployment
+                  (e.g. Render) has no such venv in its checkout, so this
+                  stays off there by default, exactly as before.
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ import os
 import sys
 import threading
 import time
+from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -191,6 +196,24 @@ def make_depth_scanner(room: SimulatedRoom):
     return scan
 
 
+def _default_mesh_python() -> Optional[str]:
+    """`.venv-mesh/bin/python3` next to the repo root, if it exists.
+
+    Used only as a fallback when MESH_RECONSTRUCT_PYTHON isn't set
+    explicitly, so a local checkout that already followed
+    mesh_reconstruct.py's own setup instructions (a venv under an older
+    Python, with `pip install open3d`) gets a working "download the
+    accurate mesh" button with zero extra configuration, while an operator
+    who wants a different interpreter can still override it. Existence is
+    all that's checked here — not that Open3D actually imports — so a
+    half-set-up venv still fails with mesh_reconstruct.py's own clear
+    subprocess error rather than silently pretending to work.
+    """
+    repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    candidate = os.path.join(repo_root, ".venv-mesh", "bin", "python3")
+    return candidate if os.path.isfile(candidate) else None
+
+
 def new_grid() -> OccupancyGrid:
     # Sized to cover the room with margin on all sides, per BUILD.md's note
     # that the grid represents a bounded area — the edge of the array is a
@@ -248,7 +271,7 @@ def main() -> int:
         pointcloud_fn=lambda: current["mission"].point_cloud.to_dict(),
         host=host,
         port=port,
-        mesh_reconstruct_python=os.environ.get("MESH_RECONSTRUCT_PYTHON"),
+        mesh_reconstruct_python=os.environ.get("MESH_RECONSTRUCT_PYTHON") or _default_mesh_python(),
         reset_fn=restart_event.set,
     )
     print("Scout is exploring a simulated room.")

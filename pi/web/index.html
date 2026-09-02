@@ -27,12 +27,21 @@
   #sidebar {
     width: 320px; flex-shrink: 0; padding: 16px; overflow-y: auto;
     box-sizing: border-box; border-left: 1px solid #2a2e35;
+    /* Without an explicit background, the mobile @media block below turns
+       this into a position:fixed overlay with nothing behind its own text
+       but the canvas underneath showing through — caught live: the log
+       panel was unreadable, overlaid directly on the busy grid image. */
+    background: #12151a;
   }
   #sidebarToggle { display: none; }
   h1 { font-size: 15px; margin: 0 0 12px; letter-spacing: 0.02em; color: #9fd0ff; }
   .row { display: flex; justify-content: space-between; margin: 4px 0; }
   .label { color: #8a8f98; }
-  .value { font-variant-numeric: tabular-nums; }
+  /* direction:ltr + isolate so numeric readouts (e.g. "(120, -300) mm 45°")
+     stay left-to-right and don't get bidi-reordered when the surrounding
+     sidebar switches to Hebrew — same defensive pattern used for code/math
+     blocks on the docs site. */
+  .value { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
   #state {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
     background: #2a2e35; font-weight: 600;
@@ -40,14 +49,32 @@
   #state.DONE { background: #1e4620; color: #8fe08f; }
   #state.RECOVERING { background: #4a2020; color: #ff9d9d; }
   hr { border: none; border-top: 1px solid #2a2e35; margin: 12px 0; }
-  #log { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: #a9b4c0; }
+  /* Mission log lines are server-generated English (see mission.py's _log)
+     and never translated (see I18N's comment below) — force LTR/left
+     regardless of the sidebar's own direction, otherwise Hebrew mode's
+     inherited dir="rtl" right-aligns these and visually displaces each
+     line's leading timestamp to the trailing edge, which reads as garbled
+     for text that's still 100% English underneath. */
+  #log { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: #a9b4c0; direction: ltr; text-align: left; }
   #log div { padding: 2px 0; border-bottom: 1px solid #1c1f24; }
   .warn { color: #ffb454 !important; }
   #offline { display: none; color: #ff9d9d; margin-top: 8px; }
-  #nav { margin-bottom: 12px; }
+  #nav { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #nav a { color: #8a8f98; text-decoration: none; font-size: 12px; }
   #nav a.active { color: #9fd0ff; }
-  #nav span { color: #444; margin: 0 6px; }
+  #nav .sep { color: #444; margin: 0 6px; }
+  #langToggle { display: flex; gap: 4px; flex-shrink: 0; }
+  #langToggle button {
+    border: 1px solid #3a3f47; background: #1c2027; color: #8a8f98;
+    border-radius: 999px; padding: 2px 8px; font-size: 10.5px; cursor: pointer;
+    font-family: inherit;
+  }
+  #langToggle button.active { background: #2a3a4a; color: #9fd0ff; border-color: #4a5058; }
+  /* Only #sidebar gets dir="rtl" toggled onto it (see applyLang below) — the
+     canvas/layout itself never flips, so this attribute selector only ever
+     matches text content, never anything layout-sensitive. */
+  [dir="rtl"] { text-align: right; }
+  [lang="he"] { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", Arial, sans-serif; }
 
   @media (max-width: 820px) {
     #sidebar {
@@ -69,21 +96,24 @@
 <body>
 <div id="layout">
   <div id="mapPane">
-    <button id="sidebarToggle" title="Show info">&#9776;</button>
+    <button id="sidebarToggle" data-i18n-title="showInfo" title="Show info">&#9776;</button>
     <canvas id="grid" width="600" height="600"></canvas>
   </div>
   <div id="sidebar">
-    <div id="nav"><a class="active" href="/index.html">2D map</a><span>·</span><a href="/scene.html">3D scene</a></div>
-    <h1>SCOUT — LIVE MISSION</h1>
-    <div class="row"><span class="label">state</span><span id="state" class="value">—</span></div>
-    <div class="row"><span class="label">coverage</span><span id="coverage" class="value">—</span></div>
-    <div class="row"><span class="label">frontiers</span><span id="frontiers" class="value">—</span></div>
-    <div class="row"><span class="label">pose</span><span id="pose" class="value">—</span></div>
-    <div class="row"><span class="label">battery</span><span id="battery" class="value">—</span></div>
+    <div id="nav">
+      <span><a class="active" href="/index.html" data-i18n="nav2d">2D map</a><span class="sep">·</span><a href="/scene.html" data-i18n="nav3d">3D scene</a></span>
+      <span id="langToggle"><button id="langBtnEn" type="button">EN</button><button id="langBtnHe" type="button">עב</button></span>
+    </div>
+    <h1 data-i18n="title">SCOUT — LIVE MISSION</h1>
+    <div class="row"><span class="label" data-i18n="state">state</span><span id="state" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="coverage">coverage</span><span id="coverage" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="frontiers">frontiers</span><span id="frontiers" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="pose">pose</span><span id="pose" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="battery">battery</span><span id="battery" class="value">—</span></div>
     <hr>
-    <div class="row"><span class="label">frames rx</span><span id="frames" class="value">—</span></div>
-    <div class="row"><span class="label">checksum errs</span><span id="checksum" class="value">—</span></div>
-    <div id="offline">no response from the dashboard server</div>
+    <div class="row"><span class="label" data-i18n="framesRx">frames rx</span><span id="frames" class="value">—</span></div>
+    <div class="row"><span class="label" data-i18n="checksumErrs">checksum errs</span><span id="checksum" class="value">—</span></div>
+    <div id="offline" data-i18n="offline">no response from the dashboard server</div>
     <hr>
     <div id="log"></div>
   </div>
@@ -148,13 +178,73 @@ function fmtPose(pose) {
   return `(${pose.x_mm.toFixed(0)}, ${pose.y_mm.toFixed(0)}) mm  ${pose.heading_deg.toFixed(0)}°`;
 }
 
+// Static UI text only — mission log lines (state.log) come from the Python
+// mission code (mission.py's _log calls) and stay in English; translating
+// those would need i18n on the server side, out of scope here. Numbers,
+// coordinates, and units (mm, V, %) also aren't language-dependent.
+const I18N = {
+  en: {
+    nav2d: "2D map", nav3d: "3D scene",
+    title: "SCOUT — LIVE MISSION",
+    state: "state", coverage: "coverage", frontiers: "frontiers", pose: "pose",
+    battery: "battery", framesRx: "frames rx", checksumErrs: "checksum errs",
+    offline: "no response from the dashboard server",
+    showInfo: "Show info",
+  },
+  he: {
+    nav2d: "מפה דו-ממדית", nav3d: "תצוגה תלת-ממדית",
+    title: "סקאוט — משימה חיה",
+    state: "מצב", coverage: "כיסוי", frontiers: "חזיתות", pose: "תנוחה",
+    battery: "סוללה", framesRx: "פריימים", checksumErrs: "שגיאות checksum",
+    offline: "אין תגובה משרת לוח הבקרה",
+    showInfo: "הצג מידע",
+  },
+};
+// The mission's `state` field (SWEEPING/PLANNING/.../DONE) is also used
+// verbatim as the #state element's CSS class (see #state.DONE etc.) — only
+// the displayed text is translated here, className always stays the raw
+// English value so the state-colour CSS keeps working regardless of lang.
+const STATE_LABELS = {
+  en: { IDLE: "IDLE", SWEEPING: "SWEEPING", PLANNING: "PLANNING", DRIVING: "DRIVING", RECOVERING: "RECOVERING", DONE: "DONE" },
+  he: { IDLE: "ממתין", SWEEPING: "סורק", PLANNING: "מתכנן", DRIVING: "נוסע", RECOVERING: "מתאושש", DONE: "הושלם" },
+};
+
+let lang = localStorage.getItem("scout_dashboard_lang") || "en";
+
+function applyLang() {
+  const t = I18N[lang];
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t[el.dataset.i18n];
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t[el.dataset.i18nTitle];
+  });
+  // Scoped to #sidebar rather than <html>/<body> on purpose: the canvas and
+  // its layout stay exactly as tested regardless of language, only the
+  // sidebar's own text reflows RTL.
+  document.getElementById("sidebar").dir = lang === "he" ? "rtl" : "ltr";
+  document.getElementById("langBtnEn").classList.toggle("active", lang === "en");
+  document.getElementById("langBtnHe").classList.toggle("active", lang === "he");
+}
+document.getElementById("langBtnEn").addEventListener("click", () => {
+  lang = "en";
+  localStorage.setItem("scout_dashboard_lang", lang);
+  applyLang();
+});
+document.getElementById("langBtnHe").addEventListener("click", () => {
+  lang = "he";
+  localStorage.setItem("scout_dashboard_lang", lang);
+  applyLang();
+});
+applyLang();
+
 async function poll() {
   try {
     const res = await fetch("/state.json", { cache: "no-store" });
     const state = await res.json();
     document.getElementById("offline").style.display = "none";
 
-    document.getElementById("state").textContent = state.state;
+    document.getElementById("state").textContent = STATE_LABELS[lang][state.state] || state.state;
     document.getElementById("state").className = state.state;
     document.getElementById("coverage").textContent = (state.coverage * 100).toFixed(1) + "%";
     document.getElementById("frontiers").textContent = state.frontier_count;
