@@ -157,6 +157,29 @@ def test_bumper_stops_even_with_safety_disabled():
         assert wait_until(lambda: p.EV_BUMPER in events, timeout=3.0)
 
 
+def test_remove_event_callback_stops_future_delivery():
+    """A caller whose lifetime is shorter than the Robot's own (e.g. a
+    mission recreated on every SCOUT_LOOP restart) must be able to fully
+    unregister — otherwise it stays reachable forever via
+    Robot._event_callbacks, which is exactly what leaked memory on the
+    public demo until Robot.remove_event_callback existed."""
+    with Harness() as h:
+        events = []
+        h.robot.on_event(events.append)
+        h.robot.remove_event_callback(events.append)
+
+        assert h.robot.travel(2000, wait=False)
+        assert wait_until(lambda: h.sim.x > 20, timeout=3.0)
+        h.sim.bumpers = 0b01
+        time.sleep(0.3)
+        assert events == []
+
+
+def test_remove_event_callback_is_a_noop_if_not_registered():
+    with Harness() as h:
+        h.robot.remove_event_callback(lambda code: None)  # must not raise
+
+
 def test_no_echo_does_not_trip_safety():
     """255 means 'no information'. Treating it as an obstacle would freeze the
     robot every time the beam scattered off an angled wall."""

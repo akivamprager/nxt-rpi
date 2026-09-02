@@ -152,6 +152,12 @@ class ExplorationMission:
                 self.robot.stop()
             except (RobotError, IOError):
                 pass
+            # Undo the on_event registration from __init__ — robot outlives
+            # any one mission (see demo_explore.py's SCOUT_LOOP restart
+            # loop), so without this every finished mission stays reachable
+            # forever via robot._event_callbacks, leaking its whole point
+            # cloud. See Robot.remove_event_callback's docstring.
+            self.robot.remove_event_callback(self._on_robot_event)
 
     # ------------------------------------------------------------- SWEEPING
 

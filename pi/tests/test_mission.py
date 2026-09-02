@@ -219,6 +219,33 @@ def test_mission_ends_rather_than_looping_forever_on_a_single_unreachable_fronti
         assert mission.state == DONE
 
 
+def test_finished_mission_unregisters_its_robot_event_callback():
+    """Regression test for a real memory leak, caught from a live OOM kill
+    on the public demo (Render reported 'exited with status 137' /
+    'exceeded its memory limit'): demo_explore.py's SCOUT_LOOP restart loop
+    creates a fresh ExplorationMission on the SAME long-lived `robot` every
+    lap. Robot.on_event only ever appended, with nothing to remove a
+    callback again, so every finished mission's bound `_on_robot_event`
+    stayed in robot._event_callbacks forever — keeping that whole mission
+    object (grid, point cloud, everything) permanently unreachable but
+    un-freeable, growing without bound as laps accumulated. run()'s finally
+    block must undo the on_event registration from __init__ on every exit
+    path.
+    """
+    room = SimulatedRoom(walls=[((2000.0, -2000.0), (2000.0, 2000.0))])
+    with Harness(room) as h:
+        grid = OccupancyGrid(width=40, height=40, cell_size_mm=100.0, origin_x_mm=-2000, origin_y_mm=-2000)
+        mission = ExplorationMission(h.robot, grid, min_frontier_cluster=1)
+        assert mission._on_robot_event in h.robot._event_callbacks
+
+        thread = threading.Thread(target=mission.run, daemon=True)
+        thread.start()
+        mission.stop()
+        assert wait_until(lambda: not thread.is_alive(), timeout=5.0)
+
+        assert mission._on_robot_event not in h.robot._event_callbacks
+
+
 def test_sweep_applies_a_localizer_correction():
     """A stand-in for real vision: the localizer hook is a plain callable,
     so this proves the wiring (sweep -> localizer -> robot.set_pose) works

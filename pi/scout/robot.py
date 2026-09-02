@@ -326,6 +326,24 @@ class Robot:
         """Register a telemetry callback. Runs on the reader thread."""
         self._telemetry_callbacks.append(callback)
 
+    def remove_event_callback(self, callback: EventCallback) -> None:
+        """Undo a prior `on_event`. A no-op if `callback` isn't registered.
+
+        Matters for any caller whose lifetime is shorter than the Robot's
+        own — e.g. ExplorationMission, which is recreated on every
+        SCOUT_LOOP restart while `robot` lives for the whole process.
+        Without this, each restart's bound `_on_robot_event` method stayed
+        in `_event_callbacks` forever, keeping that lap's whole mission
+        object — grid, point cloud, everything — permanently unreachable
+        but un-freeable. Confirmed as the cause of a real OOM kill on the
+        public demo (Render reported "exited with status 137" /
+        "exceeded its memory limit" after enough SCOUT_LOOP laps).
+        """
+        try:
+            self._event_callbacks.remove(callback)
+        except ValueError:
+            pass
+
     # -------------------------------------------------------------- diagnostics
 
     def link_stats(self) -> dict:
