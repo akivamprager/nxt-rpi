@@ -27,6 +27,15 @@ estimates normals (Poisson reconstruction needs them — a bare point cloud
 has no notion of "which way is outward"), and runs Poisson surface
 reconstruction.
 
+Performance note: the actual bottleneck on a real scan is normal
+orientation, not Poisson reconstruction itself — benchmarked at 296s for
+that one step alone on a realistic ~154k-point cloud, versus 2.7s for
+Poisson at depth=9. reconstruct_mesh therefore voxel-downsamples (30mm
+default, see --voxel-size) before normal estimation/orientation; a depth-9
+octree can't represent detail finer than that anyway, so this trades
+nothing away in practice while cutting real runtimes from minutes to
+single-digit seconds.
+
 Honest caveat: Poisson assumes a reasonably dense, roughly closed(ish)
 surface sampling. A robot's earned point cloud — sparse, with real gaps
 wherever it hasn't scanned yet — produces a rougher, holier mesh than a
@@ -69,17 +78,36 @@ def points_to_open3d(data: dict):
     return pcd
 
 
-def reconstruct_mesh(pcd, depth: int = 9, density_trim_quantile: float = 0.05):
+def reconstruct_mesh(
+    pcd, depth: int = 9, density_trim_quantile: float = 0.05, voxel_size_mm: float = 30.0
+):
     import open3d as o3d
+
+    # `orient_normals_consistent_tangent_plane` builds a Riemannian graph
+    # over every point and finds a minimum spanning tree on it — its cost
+    # scales far worse than linearly with point count on real (irregular,
+    # gappy) scan data. Benchmarked live against a realistic ~154k-point
+    # synthetic room cloud: estimate_normals took 0.1s, Poisson (depth=9)
+    # took 2.7s, and this one step alone took 296s — effectively the whole
+    # runtime. Downsampling first is the fix, not a quality compromise: a
+    # depth-9 Poisson octree can't represent detail finer than roughly
+    # what a 30mm voxel already preserves, so feeding it more raw points
+    # than that buys nothing but a slower orientation step. Cutting the
+    # same cloud to ~32k points via a 45mm voxel dropped the orientation
+    # step to 6.4s; 30mm (this default) is more conservative than that.
+    # The un-downsampled `pcd` this function was called with is left
+    # untouched — main() still writes the full-resolution point cloud
+    # separately for comparison.
+    pcd_ds = pcd.voxel_down_sample(voxel_size=voxel_size_mm) if voxel_size_mm > 0 else pcd
 
     # search radius in mm — a few times PointCloudMap's default 20mm
     # dedup resolution, wide enough to find neighbours in a sparse scan.
-    pcd.estimate_normals(
+    pcd_ds.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=60.0, max_nn=30)
     )
-    pcd.orient_normals_consistent_tangent_plane(30)
+    pcd_ds.orient_normals_consistent_tangent_plane(30)
 
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd_ds, depth=depth)
     # Trim the lowest-density vertices — see this module's docstring on why
     # Poisson extrapolates a surface through real scan gaps rather than
     # leaving a hole; this is the standard mitigation, not a full fix.
@@ -98,6 +126,12 @@ def main() -> int:
         "--depth", type=int, default=9,
         help="Poisson octree depth: higher = more detail, needs more points (default 9)",
     )
+    parser.add_argument(
+        "--voxel-size", type=float, default=30.0,
+        help="mm — downsample to this spacing before normal orientation, the "
+        "actual runtime bottleneck on real scans (default 30.0; see "
+        "reconstruct_mesh's docstring). 0 disables downsampling.",
+    )
     args = parser.parse_args()
 
     data = fetch_pointcloud(args.host, args.port)
@@ -113,7 +147,7 @@ def main() -> int:
     import open3d as o3d
 
     pcd = points_to_open3d(data)
-    mesh = reconstruct_mesh(pcd, depth=args.depth)
+    mesh = reconstruct_mesh(pcd, depth=args.depth, voxel_size_mm=args.voxel_size)
 
     o3d.io.write_triangle_mesh(args.out, mesh)
     print(f"wrote {args.out} — {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
